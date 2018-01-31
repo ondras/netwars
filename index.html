@@ -1,0 +1,97 @@
+<!doctype html>
+<html>
+	<head>
+		<script src="bower_components/gl-matrix/dist/gl-matrix.js"></script>
+		<script src="bower_components/promise.js/promise.js"></script>
+		<script src="bower_components/promise.js/promise-addons.js"></script>
+		<script src="js/loop.js"></script>
+		<script src="js/color.js"></script>
+		<script src="js/geometry.js"></script>
+		<script src="js/entity.js"></script>
+		<script src="js/entity.circle.js"></script>
+		<script src="js/entity.debris.js"></script>
+		<script src="js/entity.shot.js"></script>
+		<script src="js/entity.pod.js"></script>
+		<script src="js/entity.ship.js"></script>
+		<script src="js/camera.js"></script>
+		<script src="js/weapon.js"></script>
+		<script src="js/renderer.js"></script>
+		<script src="js/renderer.canvas.js"></script>
+		<script src="js/renderer.webgl.js"></script>
+		<script src="js/nsh.js"></script>
+		<script src="js/pilot.js"></script>
+		<style>
+			xcanvas {
+				width: 800px;
+			}
+
+			canvas {
+				image-rendering: -webkit-optimize-contrast;
+				image-rendering: -moz-crisp-edges;
+				image-rendering: -o-crisp-edges;
+				image-rendering: crisp-edges;
+			}
+
+			canvas {
+				margin: 0.5em;
+			}
+		</style>
+
+<script id="vs" type="x-shader/x-vertex">
+attribute vec3 aPosition;
+attribute vec3 aColor;
+uniform mat4 uMVmatrix;
+uniform mat4 uPmatrix;
+varying vec3 vColor;
+
+void main(void) {
+	gl_Position = uPmatrix * uMVmatrix * vec4(aPosition, 1.0);
+	vColor = aColor;
+}
+</script>
+
+<script id="fs" type="x-shader/x-fragment">
+precision mediump float;
+varying vec3 vColor;
+
+void main(void) {
+	gl_FragColor = vec4(vColor, 1.0);
+}
+</script>		
+
+<script id="vs-billboard" type="x-shader/x-vertex">
+attribute vec3 aPosition;
+attribute float aRadius;
+uniform mat4 uMVmatrix;
+uniform mat4 uPmatrix;
+uniform float uViewport;
+
+void main(void) {
+	vec4 center = uMVmatrix * vec4(aPosition, 1.0);
+	vec4 offset = center;
+	offset.x += aRadius;
+
+	gl_Position = uPmatrix * center;
+	vec4 offsetPosition = uPmatrix * offset;
+
+	gl_PointSize = (offsetPosition.x/offsetPosition.w - gl_Position.x/gl_Position.w) * uViewport;
+}
+</script>
+
+<script id="fs-billboard" type="x-shader/x-fragment">
+precision mediump float;
+uniform sampler2D uTexture;
+
+void main(void) {
+	gl_FragColor = texture2D(uTexture, gl_PointCoord);
+	if (gl_FragColor.a < 0.5) { discard; }
+}
+</script>		
+
+
+	</head>
+	<body>
+		<p>([repeated] shift accelerate, [repeated] ctrl deaccelerate, upper left viewport provides mouse-based controls)</p>
+		<script src="js/main.js"></script>
+	</body>
+</html>

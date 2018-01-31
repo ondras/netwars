@@ -1,0 +1,22 @@
+{
+  "name": "3d",
+  "version": "0.0.0",
+  "authors": [
+    "Ondrej Zara <ondrej.zara@gmail.com>"
+  ],
+  "license": "MIT",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test",
+    "tests"
+  ],
+  "dependencies": {
+    "gl-matrix": "master",
+    "promise.js": "*"
+  },
+  "resolutions": {
+    "gl-matrix": "master"
+  }
+}
