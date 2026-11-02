@@ -1,3 +1,8 @@
+import { vec3 } from "gl-matrix";
+import { Entity } from "./entity.js";
+import { Geometry } from "./geometry.js";
+import { Color } from "./color.js";
+
 Entity.Shot = function(position, velocity) {
 	Entity.call(this);
 

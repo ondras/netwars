@@ -1,4 +1,4 @@
-var Geometry = {
+export var Geometry = {
 	LINE: 1,
 	TRIANGLE: 2,
 	QUAD: 3,

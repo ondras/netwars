@@ -1,3 +1,6 @@
+import { quat } from "gl-matrix";
+import { Entity } from "./entity.js";
+
 Entity.Pod = function() {
 	Entity.call(this);
 

@@ -1,4 +1,8 @@
-var Weapon = function() {
+import { vec3 } from "gl-matrix";
+import { Entity } from "./entity.js";
+import "./entity.shot.js"; /* registers Entity.Shot */
+
+export var Weapon = function() {
 	this._lastFired = 0;
 }
 

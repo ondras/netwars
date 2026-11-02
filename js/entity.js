@@ -1,4 +1,8 @@
-var Entity = function() {
+import { vec3, quat, mat4 } from "gl-matrix";
+import { NSH } from "./nsh.js";
+
+/* Subclasses (Entity.Ship, Entity.Debris, ...) attach themselves to this namespace from their own modules */
+export var Entity = function() {
 	this.position = vec3.create();
 	this.velocity = vec3.create();
 	this.orientation = quat.create();

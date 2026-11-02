@@ -1,4 +1,6 @@
-var Color = function(r, g, b) {
+import { vec3 } from "gl-matrix";
+
+export var Color = function(r, g, b) {
 	this.rgb = vec3.create();
 
 	if (arguments.length == 3) {

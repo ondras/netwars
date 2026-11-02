@@ -1,4 +1,4 @@
-var Loop = function(options) {
+export var Loop = function(options) {
 	this._options = {
 		interval: 30, /* ms */
 		update: 15 /* cca 60fps */
@@ -37,7 +37,7 @@ Loop.prototype.stop = function() {
 
 Loop.prototype._tickRender = function() {
 	this.renderers.forEach(this._render, this);
-	Promise.requestAnimationFrame().then(this._tickRender);
+	requestAnimationFrame(this._tickRender);
 }
 
 Loop.prototype._render = function(renderer) {

@@ -1,3 +1,7 @@
+import { vec3, quat } from "gl-matrix";
+import { Entity } from "./entity.js";
+import { Weapon } from "./weapon.js";
+
 Entity.Ship = function() {
 	Entity.call(this);
 

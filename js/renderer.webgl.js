@@ -1,3 +1,7 @@
+import { mat4 } from "gl-matrix";
+import { Renderer } from "./renderer.js";
+import { Geometry } from "./geometry.js";
+
 Renderer.WebGL = function(camera, options) {
 	Renderer.apply(this, arguments);
 

@@ -1,3 +1,8 @@
+import { vec3, quat } from "gl-matrix";
+import { Entity } from "./entity.js";
+import { Geometry } from "./geometry.js";
+import { Color } from "./color.js";
+
 Entity.Debris = function(parent, velocity) {
 	Entity.call(this);
 	this._time = 4 + 3*Math.random(); /* life span */

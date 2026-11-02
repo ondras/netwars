@@ -1,3 +1,7 @@
+import { vec3 } from "gl-matrix";
+import { Entity } from "./entity.js";
+import { Geometry } from "./geometry.js";
+
 Entity.Circle = function(radius, color) {
 	Entity.call(this);
 	this._build(radius, color);

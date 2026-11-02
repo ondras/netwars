@@ -1,3 +1,15 @@
+import { vec3 } from "gl-matrix";
+import { Loop } from "./loop.js";
+import { Camera } from "./camera.js";
+import { Renderer } from "./renderer.js";
+import "./renderer.canvas.js"; /* registers Renderer.Canvas */
+import "./renderer.webgl.js"; /* registers Renderer.WebGL */
+import { Entity } from "./entity.js";
+import "./entity.debris.js"; /* registers Entity.Debris, used by Entity#explode */
+import "./entity.pod.js"; /* registers Entity.Pod */
+import "./entity.ship.js"; /* registers Entity.Ship */
+import { Pilot } from "./pilot.js";
+
 var loop = new Loop().start();
 
 var camera = new Camera();

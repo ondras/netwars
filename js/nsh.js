@@ -1,4 +1,8 @@
-var NSH = {
+import { vec3, quat } from "gl-matrix";
+import { Color } from "./color.js";
+import { Geometry } from "./geometry.js";
+
+export var NSH = {
 	path: "models/",
 	_cache: {},
 	_palette: [
@@ -104,18 +108,10 @@ var NSH = {
 		var cache = this._cache;
 		if (path in cache) { return Promise.resolve(cache[path]); }
 
-		var promise = new Promise(function(resolve, reject) {
-			var xhr = new XMLHttpRequest();
-			xhr.open("get", path, true);
-			Promise.send(xhr).then(function() {
-				try {
-					var entity = this.create(xhr.responseText);
-					resolve(entity);
-				} catch (e) {
-					reject(e);
-				}
-			}.bind(this), reject);
-		}.bind(this));
+		var promise = fetch(path).then(function(response) {
+			if (!response.ok) { throw new Error("Cannot load " + path + ": HTTP " + response.status); }
+			return response.text();
+		}).then(this.create.bind(this));
 
 		cache[path] = promise;
 		return promise;

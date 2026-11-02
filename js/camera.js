@@ -1,4 +1,6 @@
-var Camera = function(options) {
+import { vec3, quat, mat4 } from "gl-matrix";
+
+export var Camera = function(options) {
 	this._follow = {
 		entity: null,
 		offset: vec3.create()

@@ -1,3 +1,7 @@
+import { vec2, vec3, mat4 } from "gl-matrix";
+import { Renderer } from "./renderer.js";
+import { Geometry } from "./geometry.js";
+
 Renderer.Canvas = function(camera, options) {
 	Renderer.apply(this, arguments);
 	this.ctx = this._node.getContext("2d");

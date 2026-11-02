@@ -1,4 +1,7 @@
-var Renderer = function(camera, options) {
+import { Color } from "./color.js";
+
+/* Implementations (Renderer.Canvas, Renderer.WebGL) attach themselves to this namespace from their own modules */
+export var Renderer = function(camera, options) {
 	this._node = document.createElement("canvas");
 
 	this._id = Math.random();

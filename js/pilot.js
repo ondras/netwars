@@ -1,4 +1,4 @@
-var Pilot = function() {
+export var Pilot = function() {
 }
 
 Pilot.Player = function(renderer) {
