@@ -23,7 +23,7 @@ const METER_BOTTOM = 56;
 /** Distance ahead of the ship where the crosshair is placed (m) */
 const AIM_DISTANCE = 40;
 
-const RADAR_RANGE = 40; /* m */
+const RADAR_RANGE = 150; /* m */
 /** Radar box size (px) */
 const RADAR_WIDTH = 260;
 const RADAR_HEIGHT = 160;

@@ -16,8 +16,8 @@ const CARGO_OFFSET = vec3.fromValues(0, -1.4, 0.3);
 const GRAPPLE_MOUNT = vec3.fromValues(0, -0.3, 0.3);
 /** Time to pull a grabbed pod in (s) */
 const REEL_TIME = 0.6;
-/** Distance from the origin at which a pirate with a pod has escaped (m) */
-export const ESCAPE_RADIUS = 100;
+/** Distance from the origin at which a pirate with a pod has escaped (m); beyond the radar range when near the pods */
+export const ESCAPE_RADIUS = 150;
 /** Distance kept from the player when there is nothing to steal (m) */
 const HOLD_DISTANCE = 25;
 

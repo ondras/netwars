@@ -197,6 +197,48 @@ describe("pirates", () => {
 		}
 	});
 
+	/** Run a fresh spawner once and return its pirate */
+	function spawnOne(player: Ship, pods: Pod[]): Pirate {
+		const loop = new Loop();
+		loop.scene.push(...pods, new PirateSpawner(player, { max: 1, firstDelay: 0, minDistance: 120 }));
+		loop.update(STEP);
+		loop.update(STEP);
+		return loop.scene.find(entity => entity instanceof Pirate)!;
+	}
+
+	const horizontalDistance = (a: vec3, b: vec3) => Math.hypot(a[0] - b[0], a[2] - b[2]);
+
+	it("appear beyond the pods as seen from the player, facing them", () => {
+		const player = shipAt(0, 0, 100);
+		const pods = [[-20, -10], [15, 5], [0, 20], [10, -25]].map(([x, z]) => {
+			const pod = new Pod();
+			vec3.set(pod.position, x, 0, z);
+			return pod;
+		});
+		const center = vec3.fromValues(1.25, 0, -2.5);
+		const toCenter = vec3.subtract(vec3.create(), center, player.position);
+		const farthestPod = Math.max(...pods.map(pod => horizontalDistance(pod.position, player.position)));
+
+		for (let i = 0; i < 20; i++) { /* the direction is randomized */
+			const pirate = spawnOne(player, pods);
+			const fromCenter = vec3.subtract(vec3.create(), pirate.position, center);
+
+			expect(vec3.dot(fromCenter, toCenter)).toBeGreaterThan(0); /* on the far side */
+			expect(horizontalDistance(pirate.position, player.position)).toBeGreaterThan(farthestPod);
+			expect(horizontalDistance(pirate.position, player.position)).toBeGreaterThanOrEqual(120 - 0.1);
+
+			const nose = vec3.transformQuat(vec3.create(), vec3.fromValues(0, 0, -1), pirate.orientation);
+			expect(vec3.dot(nose, vec3.negate(fromCenter, fromCenter))).toBeGreaterThan(0); /* facing the pods */
+		}
+	});
+
+	it("appear at the minimum distance from the player when there are no free pods", () => {
+		const player = shipAt(500, 0, -300);
+		const pirate = spawnOne(player, []);
+
+		expect(horizontalDistance(pirate.position, player.position)).toBeCloseTo(120, 0);
+	});
+
 	it("are sent in up to the limit, and replaced", async () => {
 		const loop = new Loop();
 		loop.scene.push(new PirateSpawner(absentPlayer(), { max: 2, firstDelay: 0, interval: 1 }));
