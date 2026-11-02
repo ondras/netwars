@@ -35,7 +35,7 @@ export interface SoundDefinition {
 export const SOUNDS: Record<SoundName, SoundDefinition> = {
 	/** The player's or a hunter's gun fires */
 	cannon: {
-		level: 0.45,
+		level: 0.25,
 		params: { p_env_sustain: 0.2653, p_env_punch: 0.1727, p_env_decay: 0.2376, p_base_freq: 0.546, p_freq_limit: 0.2, p_freq_ramp: -0.2769, p_duty: 0.6548, p_duty_ramp: -0.0752, p_pha_offset: 0.0133, p_pha_ramp: -0.1198, p_hpf_freq: 0.143 },
 	},
 
@@ -82,7 +82,7 @@ export const SOUNDS: Record<SoundName, SoundDefinition> = {
 
 	/** A pirate grabs a pod: a double beep */
 	grabbed: {
-		level: 0.6,
+		level: 0.4,
 		params: { p_base_freq: 0.5896, p_arp_mod: -0.07, p_arp_speed: 0.7886, p_duty: 0.309, p_env_sustain: 0.2449, p_env_decay: 0.1485, p_lpf_freq: 0.3 },
 		pattern: [0, 0.26],
 	},
