@@ -75,7 +75,7 @@ export class CanvasRenderer extends Renderer {
 	 * @param mvpMatrix Complete MVP matrix
 	 * @param mvMatrix Model-View matrix necessary for billboard size computation
 	 */
-	private projectAndSortGeometries(geometries: Geometry[], mvpMatrix: mat4, mvMatrix: mat4): ProjectedGeometry[] {
+	private projectAndSortGeometries(geometries: readonly Geometry[], mvpMatrix: mat4, mvMatrix: mat4): ProjectedGeometry[] {
 		const results: ProjectedGeometry[] = [];
 
 		for (const geometry of geometries) {
@@ -130,7 +130,7 @@ export class CanvasRenderer extends Renderer {
 			break;
 
 			case "billboard":
-				ctx.drawImage(geometry.texture, p[0][0] - radius, p[0][1] - radius, 2 * radius, 2 * radius);
+				ctx.drawImage(geometry.getTexture(), p[0][0] - radius, p[0][1] - radius, 2 * radius, 2 * radius);
 			break;
 		}
 	}

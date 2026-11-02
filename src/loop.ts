@@ -1,64 +1,72 @@
+import { resolveHits } from "./collision.ts";
 import type { Entity } from "./entity/entity.ts";
 import type { Renderer } from "./render/renderer.ts";
+import type { World } from "./world.ts";
 
 export interface LoopOptions {
-	/** Simulation timer period (ms) */
-	interval: number;
-	/** Fixed simulation step (ms) */
-	update: number;
+	/** Fixed simulation step (s) */
+	step: number;
+	/** Longest frame time simulated at once (s); limits catching up after the tab was in the background */
+	maxFrame: number;
 }
 
-export class Loop {
+/** Renders on every animation frame, advances the simulation in fixed steps */
+export class Loop implements World {
 	readonly scene: Entity[] = [];
 	readonly renderers: Renderer[] = [];
 
 	private readonly options: LoopOptions;
-	private timer = 0;
-	private ts = 0;
-	private remainingTime = 0;
+	private readonly spawned: Entity[] = [];
+	private frame = 0;
+	private lastTime: number | null = null;
+	private accumulator = 0;
 
 	constructor(options: Partial<LoopOptions> = {}) {
-		this.options = { interval: 30, update: 15, ...options };
+		this.options = { step: 0.015, maxFrame: 0.25, ...options };
 	}
 
 	start(): this {
-		if (!this.timer) {
-			this.ts = Date.now();
-			this.remainingTime = 0;
-			this.timer = window.setInterval(this.tickUpdate, this.options.interval);
-			this.tickRender();
+		if (!this.frame) {
+			this.lastTime = null;
+			this.frame = requestAnimationFrame(this.tick);
 		}
 		return this;
 	}
 
 	stop(): this {
-		if (this.timer) {
-			clearInterval(this.timer);
-			this.timer = 0;
-		}
+		cancelAnimationFrame(this.frame);
+		this.frame = 0;
 		return this;
 	}
 
-	private readonly tickRender = (): void => {
-		for (const renderer of this.renderers) { renderer.render(this.scene); }
-		requestAnimationFrame(this.tickRender);
-	};
+	spawn(...entities: Entity[]): void {
+		this.spawned.push(...entities);
+	}
 
-	private readonly tickUpdate = (): void => {
-		const ts = Date.now();
-		this.remainingTime += ts - this.ts;
-		this.ts = ts;
+	/**
+	 * Run as many simulation steps as fit into the elapsed time
+	 * @param elapsed Real time since the previous call (s)
+	 * @returns Number of steps run
+	 */
+	advance(elapsed: number): number {
+		const { step, maxFrame } = this.options;
+		this.accumulator += Math.min(elapsed, maxFrame);
 
-		while (this.remainingTime >= this.options.update) {
-			this.remainingTime -= this.options.update;
-			this.updateScene();
+		let steps = 0;
+		while (this.accumulator >= step) {
+			this.accumulator -= step;
+			this.update(step);
+			steps++;
 		}
-	};
+		return steps;
+	}
 
-	private updateScene(): void {
+	/** Single simulation step */
+	update(dt: number): void {
 		const scene = this.scene;
-		const dt = this.options.update / 1000;
-		const spawned = scene.map(entity => entity.update(dt));
+
+		for (const entity of scene) { entity.update(dt, this); }
+		resolveHits(scene, this);
 
 		let i = 0;
 		while (i < scene.length) {
@@ -71,8 +79,16 @@ export class Loop {
 			}
 		}
 
-		for (const entities of spawned) {
-			if (entities?.length) { scene.push(...entities); }
-		}
+		scene.push(...this.spawned);
+		this.spawned.length = 0;
 	}
+
+	private readonly tick = (time: DOMHighResTimeStamp): void => {
+		this.frame = requestAnimationFrame(this.tick);
+
+		if (this.lastTime !== null) { this.advance((time - this.lastTime) / 1000); }
+		this.lastTime = time;
+
+		for (const renderer of this.renderers) { renderer.render(this.scene); }
+	};
 }

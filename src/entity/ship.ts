@@ -1,6 +1,7 @@
-import { quat, vec3 } from "gl-matrix";
+import { vec3 } from "gl-matrix";
 import type { Pilot } from "../pilot.ts";
 import { Weapon } from "../weapon.ts";
+import type { World } from "../world.ts";
 import { Entity } from "./entity.ts";
 
 interface Throttle {
@@ -13,7 +14,7 @@ interface Throttle {
 }
 
 interface Axis {
-	/** rad/s */
+	/** rad/s at full deflection */
 	changeRate: number;
 	/** -1..1 */
 	control: number;
@@ -32,11 +33,15 @@ export class Ship extends Entity {
 		pitch: { changeRate: 3.5, control: 0 },
 	};
 
+	/** Fire whenever the weapon is ready */
+	trigger = false;
+
 	private pilot: Pilot | null = null;
 	private readonly weapon = new Weapon();
 
-	fire(): Entity[] | undefined {
-		return this.weapon.fire(this);
+	constructor() {
+		super();
+		this.hittable = true;
 	}
 
 	setPilot(pilot: Pilot): this {
@@ -44,18 +49,21 @@ export class Ship extends Entity {
 		return this;
 	}
 
-	override update(dt: number): Entity[] | undefined {
-		const pilotResult = this.pilot?.update(dt, this);
+	override update(dt: number, world: World): void {
+		this.pilot?.update(dt, this);
 
-		quat.identity(this.rotation);
+		this.weapon.update(dt);
+		if (this.trigger) {
+			const shot = this.weapon.fire(this);
+			if (shot) { world.spawn(shot); }
+		}
 
-		this.updateYaw();
-		this.updatePitch();
+		const { yaw, pitch } = this.engine;
+		vec3.set(this.angularVelocity, pitch.changeRate * pitch.control, yaw.changeRate * yaw.control, 0);
+
 		this.updateSpeed(dt);
 
-		const entityResult = super.update(dt); /* FIXME */
-
-		return pilotResult || entityResult;
+		super.update(dt, world);
 	}
 
 	private updateSpeed(dt: number): void {
@@ -79,15 +87,5 @@ export class Ship extends Entity {
 		vec3.set(this.velocity, 0, 0, -1); /* cardinal direction corresponding to default model orientation */
 		vec3.scale(this.velocity, this.velocity, speed.value);
 		vec3.transformQuat(this.velocity, this.velocity, this.orientation);
-	}
-
-	private updateYaw(): void {
-		const yaw = this.engine.yaw;
-		quat.rotateY(this.rotation, this.rotation, yaw.changeRate * yaw.control);
-	}
-
-	private updatePitch(): void {
-		const pitch = this.engine.pitch;
-		quat.rotateX(this.rotation, this.rotation, pitch.changeRate * pitch.control);
 	}
 }

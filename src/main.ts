@@ -44,6 +44,6 @@ camera.follow(ship, vec3.fromValues(0, 1, 3));
 const button = document.createElement("button");
 button.textContent = "EXPLODE THEM ALL";
 button.onclick = () => {
-	for (const entity of loop.scene) { explode(entity); }
+	for (const entity of loop.scene) { explode(entity, loop); }
 };
 document.body.appendChild(button);

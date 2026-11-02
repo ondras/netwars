@@ -178,7 +178,7 @@ export class WebGLRenderer extends Renderer {
 				break;
 
 				case "billboard":
-					billboards.textures.push(geometry.texture);
+					billboards.textures.push(geometry.getTexture());
 					billboards.points.push(...geometry.points[0]);
 					billboards.radiuses.push(geometry.radius);
 				break;

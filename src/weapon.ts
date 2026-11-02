@@ -2,23 +2,48 @@ import { vec3 } from "gl-matrix";
 import type { Entity } from "./entity/entity.ts";
 import { Shot } from "./entity/shot.ts";
 
+export interface WeaponOptions {
+	/** Time between shots (s) */
+	reload: number;
+	/** Shot speed relative to the firing entity (m/s) */
+	muzzleSpeed: number;
+	/** Shot life span (s) */
+	lifetime: number;
+	/** Distance in front of the firing entity where shots appear (m) */
+	muzzleOffset: number;
+}
+
+const DEFAULTS: WeaponOptions = {
+	reload: 0.15,
+	muzzleSpeed: 50,
+	lifetime: 2,
+	muzzleOffset: 1,
+};
+
 export class Weapon {
-	private lastFired = 0;
+	readonly options: WeaponOptions;
+	/** Time until the next shot is possible (s) */
+	private cooldown = 0;
 
-	/** @returns The fired shot, or nothing while reloading */
-	fire(ship: Entity): Entity[] | undefined {
-		const now = Date.now();
-		if (now - this.lastFired < 150) { return undefined; } /* FIXME */
-		this.lastFired = now;
+	constructor(options: Partial<WeaponOptions> = {}) {
+		this.options = { ...DEFAULTS, ...options };
+	}
 
-		const velocity = vec3.fromValues(0, 0, -1);
-		vec3.transformQuat(velocity, velocity, ship.orientation);
+	update(dt: number): void {
+		this.cooldown = Math.max(0, this.cooldown - dt);
+	}
 
-		const position = vec3.clone(ship.position);
-		vec3.scaleAndAdd(position, position, velocity, 1);
+	/** @returns The fired shot, or null while reloading */
+	fire(owner: Entity): Shot | null {
+		if (this.cooldown > 0) { return null; }
+		this.cooldown = this.options.reload;
 
-		vec3.scale(velocity, velocity, 50); /* fixme */
+		/* -Z is the default model orientation */
+		const direction = vec3.transformQuat(vec3.create(), vec3.fromValues(0, 0, -1), owner.orientation);
 
-		return [new Shot(position, velocity)];
+		const position = vec3.scaleAndAdd(vec3.create(), owner.position, direction, this.options.muzzleOffset);
+		const velocity = vec3.scaleAndAdd(vec3.create(), owner.velocity, direction, this.options.muzzleSpeed);
+
+		return new Shot(position, velocity, owner, this.options.lifetime);
 	}
 }

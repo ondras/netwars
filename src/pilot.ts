@@ -1,10 +1,8 @@
-import type { Entity } from "./entity/entity.ts";
 import type { Ship } from "./entity/ship.ts";
 
-/** Controls a ship */
+/** Controls a ship by setting its engine controls and trigger */
 export interface Pilot {
-	/** @returns New entities to be added to the scene (e.g. shots) */
-	update(dt: number, ship: Ship): Entity[] | undefined;
+	update(dt: number, ship: Ship): void;
 }
 
 /**
@@ -25,12 +23,11 @@ export class PlayerPilot implements Pilot, EventListenerObject {
 		window.addEventListener("keydown", this);
 	}
 
-	update(_dt: number, ship: Ship): Entity[] | undefined {
+	update(_dt: number, ship: Ship): void {
 		ship.engine.speed.control = this.speed;
 		ship.engine.yaw.control = this.yaw;
 		ship.engine.pitch.control = this.pitch;
-
-		return this.firing ? ship.fire() : undefined;
+		ship.trigger = this.firing;
 	}
 
 	handleEvent(e: Event): void {
