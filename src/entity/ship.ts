@@ -1,8 +1,11 @@
-import { vec3 } from "gl-matrix";
+import { quat, vec3, type ReadonlyVec3 } from "gl-matrix";
 import type { Pilot } from "../pilot.ts";
 import { Weapon } from "../weapon.ts";
 import type { World } from "../world.ts";
 import { Entity } from "./entity.ts";
+
+/** Control deflection per radian of heading error in steerTowards() */
+const STEER_GAIN = 2;
 
 interface Throttle {
 	/** Current speed (m/s); negative is reverse */
@@ -59,6 +62,24 @@ export class Ship extends Entity {
 		return this;
 	}
 
+	/**
+	 * Set yaw and pitch controls to turn the nose towards a point
+	 * @returns Angle between the nose and the point (rad)
+	 */
+	steerTowards(point: ReadonlyVec3): number {
+		const local = vec3.subtract(vec3.create(), point, this.position);
+		vec3.transformQuat(local, local, quat.conjugate(quat.create(), this.orientation));
+
+		/* local axes: +X right, +Y up, -Z ahead; positive yaw turns left, positive pitch raises the nose */
+		const yaw = Math.atan2(-local[0], -local[2]);
+		const pitch = Math.atan2(local[1], Math.hypot(local[0], local[2]));
+		this.engine.yaw.control = Math.max(-1, Math.min(1, yaw * STEER_GAIN));
+		this.engine.pitch.control = Math.max(-1, Math.min(1, pitch * STEER_GAIN));
+
+		const distance = vec3.length(local);
+		return (distance ? Math.acos(Math.max(-1, Math.min(1, -local[2] / distance))) : 0);
+	}
+
 	/** @returns Whether the ship survives the hit */
 	absorb(damage: number): boolean {
 		this.shields.value = Math.max(0, this.shields.value - damage);
@@ -66,7 +87,7 @@ export class Ship extends Entity {
 	}
 
 	override update(dt: number, world: World): void {
-		this.pilot?.update(dt, this);
+		this.pilot?.update(dt, this, world);
 
 		this.weapon.update(dt);
 		if (this.trigger) {

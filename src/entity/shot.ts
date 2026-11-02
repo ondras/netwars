@@ -12,6 +12,8 @@ export class Shot extends Entity {
 	readonly previousPosition = vec3.create();
 	/** Shots never hit their owner */
 	readonly owner: Entity | null;
+	/** If set, the only entity this shot can hit */
+	target: Entity | null = null;
 	/** Shield points taken from a ship on hit */
 	readonly damage: number;
 	/** Remaining life span (s) */

@@ -1,8 +1,9 @@
 import type { Ship } from "./entity/ship.ts";
+import type { World } from "./world.ts";
 
 /** Controls a ship by setting its engine controls and trigger */
 export interface Pilot {
-	update(dt: number, ship: Ship): void;
+	update(dt: number, ship: Ship, world: World): void;
 }
 
 /** Target speed change per key press (m/s) */

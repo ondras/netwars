@@ -1,8 +1,48 @@
 import { vec3 } from "gl-matrix";
 import { describe, expect, it } from "vitest";
-import { segmentHitsSphere } from "./collision.ts";
+import { resolveHits, segmentHitsSphere, segmentSphereEntry } from "./collision.ts";
+import { Color } from "./color.ts";
+import { Entity } from "./entity/entity.ts";
+import { Shot } from "./entity/shot.ts";
+import { triangle } from "./geometry.ts";
+import { Loop } from "./loop.ts";
 
 const v = (x: number, y: number, z: number) => vec3.fromValues(x, y, z);
+
+describe("segmentSphereEntry", () => {
+	it("returns the fraction of the segment where it enters the sphere", () => {
+		expect(segmentSphereEntry(v(0, 0, 0), v(10, 0, 0), v(5, 0, 0), 1)).toBeCloseTo(0.4);
+		expect(segmentSphereEntry(v(0, 0, 0), v(10, 0, 0), v(5, 2, 0), 1)).toBeNull();
+	});
+
+	it("returns 0 when starting inside", () => {
+		expect(segmentSphereEntry(v(5, 0, 0), v(10, 0, 0), v(5, 0, 0), 1)).toBe(0);
+	});
+});
+
+describe("resolveHits", () => {
+	/** Hittable entity with a 1 m bounding sphere */
+	const target = (z: number) => {
+		const entity = new Entity();
+		entity.hittable = true;
+		entity.position[2] = z;
+		entity.geometries = [triangle(v(0, 1, 0), v(-1, 0, 0), v(1, 0, 0), new Color(0xffffff))];
+		return entity;
+	};
+
+	it("hits the sphere entered first along the shot's path, whatever the scene order", () => {
+		const front = target(-10);
+		const back = target(-11.5); /* spheres overlap */
+		const shot = new Shot(v(0, 0, -20), v(0, 0, -100), null, 1, 25);
+		vec3.set(shot.previousPosition, 0, 0, 0);
+
+		resolveHits([shot, back, front], new Loop());
+
+		expect(front.dead).toBe(true);
+		expect(back.dead).toBe(false);
+		expect(shot.dead).toBe(true);
+	});
+});
 
 describe("segmentHitsSphere", () => {
 	it("hits a sphere crossed by the middle of the segment", () => {

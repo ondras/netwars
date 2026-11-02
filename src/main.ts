@@ -2,6 +2,7 @@ import { Camera } from "./camera.ts";
 import { explode } from "./entity/debris.ts";
 import { Pod } from "./entity/pod.ts";
 import { Ship } from "./entity/ship.ts";
+import { PirateSpawner } from "./entity/spawner.ts";
 import { Loop } from "./loop.ts";
 import { PlayerPilot } from "./pilot.ts";
 import { HUD } from "./render/hud.ts";
@@ -26,6 +27,8 @@ for (let i = 0; i < 20; i++) {
 	loop.scene.push(pod);
 }
 
+loop.scene.push(new PirateSpawner(ship));
+
 const scene = new WebGLRenderer(camera);
 const hud = new HUD(camera, ship);
 hud.node.className = "hud";
@@ -36,6 +39,8 @@ const button = document.createElement("button");
 button.id = "explode";
 button.textContent = "EXPLODE THEM ALL";
 button.onclick = () => {
-	for (const entity of loop.scene) { explode(entity, loop); }
+	for (const entity of loop.scene) {
+		if (entity.hittable) { explode(entity, loop); } /* not the pirate spawner */
+	}
 };
 document.body.append(button);

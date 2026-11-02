@@ -60,7 +60,17 @@ export class HUD implements Renderer {
 
 		ctx.fillText(HELP, 16, 24);
 
-		if (this.ship.dead) { return; }
+		if (this.ship.dead) {
+			ctx.save();
+			ctx.fillStyle = COLOR_WARNING;
+			ctx.font = "20px ui-monospace, monospace";
+			ctx.textAlign = "center";
+			ctx.fillText("SHIP DESTROYED", width / 2, height / 2);
+			ctx.font = FONT;
+			ctx.fillText("reload the page to play again", width / 2, height / 2 + 24);
+			ctx.restore();
+			return;
+		}
 
 		this.drawCrosshair(width, height);
 		this.drawStick(width, height);
