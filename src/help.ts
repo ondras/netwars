@@ -2,14 +2,19 @@ import { DIFFICULTIES } from "./difficulty.ts";
 import {
 	BOOST_GREEN, POWERUPS, RAPID_RED, RAPID_YELLOW, ROCKETS_RED, ROCKETS_WHITE, SHIELDS_BLUE, type PowerupKind,
 } from "./entity/powerup.ts";
+import { gunshipShape, hunterShape, pirateShape, raiderShape } from "./entity/shapes.ts";
 import { GUNSHIP_COLOR, HUNTER_COLOR, POD_COLOR, POWERUP_COLOR, RAIDER_COLOR, SHIP_COLOR } from "./render/radar-scope.ts";
+import { shipIcon } from "./render/ship-icon.ts";
 import { DIFFICULTY_FACTOR } from "./scores.ts";
+
+/** Size of the enemy ship drawings (CSS px) */
+const SHIP_ICON = 34;
 
 const hex = (color: number) => `#${color.toString(16).padStart(6, "0")}`;
 const svg = (body: string) => `<svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">${body}</svg>`;
 
-/** A radar contact */
-const dot = (color: string) => svg(`<circle cx="12" cy="12" r="5" fill="${color}"/>`);
+/** A small dot in a ship's radar colour, after its name */
+const radarDot = (color: string) => `<span class="radar-dot" style="color: ${color}" title="Radar colour">●</span>`;
 
 /** Flat drawings of the powerup shapes, in their colours */
 const ICONS: Record<PowerupKind, string> = {
@@ -43,13 +48,13 @@ export function helpMarkup(): string {
 		</dl>
 
 		<h3>Enemies</h3>
-		<div class="items">
-			${item(dot(SHIP_COLOR), "Pirate", "tows pods away, fires homing missiles")}
-			${item(dot(RAIDER_COLOR), "Raider", "steals pods like a pirate, but faster; no missiles")}
-			${item(dot(HUNTER_COLOR), "Hunter", "ignores pods, hunts you")}
-			${item(dot(GUNSHIP_COLOR), "Gunship", "a slow, much tougher hunter")}
+		<div class="items ships">
+			${item(shipIcon(pirateShape(), SHIP_ICON), `Pirate ${radarDot(SHIP_COLOR)}`, "tows pods away, fires homing missiles")}
+			${item(shipIcon(raiderShape(), SHIP_ICON), `Raider ${radarDot(RAIDER_COLOR)}`, "steals pods like a pirate, but faster; no missiles")}
+			${item(shipIcon(hunterShape(), SHIP_ICON), `Hunter ${radarDot(HUNTER_COLOR)}`, "ignores pods, hunts you")}
+			${item(shipIcon(gunshipShape(), SHIP_ICON), `Gunship ${radarDot(GUNSHIP_COLOR)}`, "a slow, much tougher hunter")}
 		</div>
-		<p class="aside">The dots are their radar colours; pods are <span style="color: ${POD_COLOR}">blue</span> there, powerups <span style="color: ${POWERUP_COLOR}">grey</span>.</p>
+		<p class="aside">The dot after each name is its colour on the radar; pods are <span style="color: ${POD_COLOR}">blue</span> there, powerups <span style="color: ${POWERUP_COLOR}">grey</span>.</p>
 
 		<h3>Powerups</h3>
 		<div class="items two">
