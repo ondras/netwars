@@ -18,6 +18,12 @@ export interface ResultScore {
 
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
+/**
+ * After a level ends, mouse presses are ignored this long (ms): the player is often still firing,
+ * and a stray click would press a button or take the focus away from the name field. Keys still work.
+ */
+const RESULT_CLICK_GUARD = 800;
+
 /** Table row of [text, class name] cells */
 function row(cells: ReadonlyArray<readonly [string, string]>, className = ""): HTMLTableRowElement {
 	const tr = document.createElement("tr");
@@ -76,6 +82,8 @@ export class Menu {
 	private readonly help = element<HTMLElement>("help-panel");
 	/** Settings or help, open in place of another panel which comes back when it closes */
 	private modal: { panel: HTMLElement; from: HTMLElement } | null = null;
+	/** performance.now() until which mouse presses are swallowed */
+	private clicksIgnoredUntil = 0;
 	private readonly levels: readonly LevelConfig[];
 	private readonly leaderboard: Leaderboard;
 
@@ -97,6 +105,15 @@ export class Menu {
 		element<HTMLButtonElement>("menu-settings").onclick = () => this.openModal(this.settings, this.menu, volumeSlider);
 		element<HTMLButtonElement>("pause-settings").onclick = () => this.openModal(this.settings, this.pause, volumeSlider);
 		element<HTMLButtonElement>("settings-back").onclick = () => this.closeModal();
+
+		/* caught before anything else sees them: no button press, no focus change (mousedown), no firing */
+		for (const type of ["pointerdown", "mousedown", "click"]) {
+			window.addEventListener(type, event => {
+				if (performance.now() >= this.clicksIgnoredUntil) { return; }
+				event.preventDefault();
+				event.stopPropagation();
+			}, { capture: true });
+		}
 
 		element<HTMLElement>("help-content").innerHTML = helpMarkup();
 		element<HTMLButtonElement>("menu-help").onclick = () => this.openModal(this.help, this.menu, this.help); /* the panel, not its button at the bottom, so it opens scrolled to the top */
@@ -188,13 +205,17 @@ export class Menu {
 		form.hidden = !entry;
 		this.result.hidden = false;
 
+		this.clicksIgnoredUntil = performance.now() + RESULT_CLICK_GUARD;
+		this.result.classList.add("guarded"); /* dims the buttons until they take clicks */
+		setTimeout(() => this.result.classList.remove("guarded"), RESULT_CLICK_GUARD);
+
 		if (!entry) {
 			focusActions();
 			return;
 		}
 
 		const rank = this.leaderboard.entries(level).findIndex(({ id }) => id == entry.id) + 1;
-		element<HTMLElement>("result-rank").textContent = `New best score: number ${rank} on ${level}`;
+		element<HTMLElement>("result-rank").textContent = `New best score: number ${rank} on ${level}. Type your name and press Enter.`;
 
 		/* the score is saved already; typing renames it, so leaving the panel any way keeps it */
 		const input = element<HTMLInputElement>("player-name");
@@ -216,6 +237,8 @@ export class Menu {
 
 	hideResult(): void {
 		this.result.hidden = true;
+		/* a focused name field would keep W / S from reaching the ship */
+		if (this.result.contains(document.activeElement)) { (document.activeElement as HTMLElement).blur(); }
 	}
 
 	private openModal(panel: HTMLElement, from: HTMLElement, focus: HTMLElement): void {

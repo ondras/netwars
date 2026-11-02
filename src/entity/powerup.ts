@@ -71,7 +71,7 @@ function boostShape(): Geometry[] {
 export const POWERUPS: Record<PowerupKind, { readonly label: string; readonly shape: () => Geometry[] }> = {
 	shields: { label: "Shields", shape: shieldsShape },
 	rapid: { label: "Rapid fire", shape: rapidShape },
-	boost: { label: "Boost", shape: boostShape },
+	boost: { label: "Extra thrust", shape: boostShape },
 	rockets: { label: "Rockets", shape: rocketsShape },
 };
 

@@ -289,23 +289,31 @@
 			#help-content .items {
 				display: grid;
 				grid-template-columns: 24px 1fr;
-				gap: 10px 12px;
-				align-items: start;
+				gap: 4px 10px;
+				align-items: center;
 			}
 
 			#help-content .items svg {
 				display: block;
 			}
 
-			#help-content .legend {
-				display: flex;
-				flex-wrap: wrap;
-				gap: 4px 18px;
+			#help-content .items.two {
+				grid-template-columns: 24px 1fr 24px 1fr;
+				gap: 6px 10px;
 			}
 
-			#help-content .legend span {
-				display: flex;
-				align-items: center;
+			#help-content .aside {
+				margin-top: 6px;
+				font-size: 11.5px;
+				opacity: 0.75;
+			}
+
+			#result button {
+				transition: opacity 0.25s;
+			}
+
+			#result.guarded button {
+				opacity: 0.4; /* not taking clicks yet: see RESULT_CLICK_GUARD */
 			}
 
 			#result-name .rank {
