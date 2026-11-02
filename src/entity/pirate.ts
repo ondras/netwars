@@ -130,6 +130,7 @@ export class Pirate extends Ship {
 
 		this.grapple = new Grapple(this, pod);
 		world.spawn(this.grapple);
+		world.sound("grabbed"); /* an alert, as loud wherever it happens */
 
 		/* flee outwards, horizontally away from the center (or straight ahead when at the center) */
 		vec3.set(this.escapeTo, this.position[0], 0, this.position[2]);
@@ -165,6 +166,8 @@ export class Pirate extends Ship {
 		const position = vec3.scaleAndAdd(vec3.create(), this.position, direction, this.radius + 0.5);
 		const { missileDamage, missileTurnRate, missileInterval } = difficulty();
 		world.spawn(new Missile(position, direction, this, this.player, { damage: missileDamage, turnRate: missileTurnRate }));
+		world.sound("launch", position);
+		world.sound("warning");
 
 		this.missileCooldown = random(missileInterval);
 	}

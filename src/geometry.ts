@@ -1,4 +1,4 @@
-import { vec3 } from "gl-matrix";
+import { vec3, type ReadonlyVec3 } from "gl-matrix";
 import { Color } from "./color.ts";
 
 export type Texture = HTMLCanvasElement | HTMLImageElement;
@@ -55,27 +55,77 @@ export function circle(center: vec3, radius: number, color: Color): Billboard {
 	return billboard(center, radius, () => circleTexture(key));
 }
 
-/** Faces are wound counter-clockwise when seen from outside (they survive back-face culling) and shaded by direction */
-export function box(halfSize: number, color: Color): Quad[] {
-	/* face normal, then two edge directions u, v with u × v = normal */
-	const faces: Array<[[number, number, number], [number, number, number], [number, number, number], number]> = [
-		[[0, 1, 0], [0, 0, 1], [1, 0, 0], 1.0],
-		[[1, 0, 0], [0, 1, 0], [0, 0, 1], 0.8],
-		[[0, 0, 1], [1, 0, 0], [0, 1, 0], 0.7],
-		[[-1, 0, 0], [0, 0, 1], [0, 1, 0], 0.8],
-		[[0, 0, -1], [0, 1, 0], [1, 0, 0], 0.7],
-		[[0, -1, 0], [1, 0, 0], [0, 0, 1], 0.5],
-	];
+/** Faces are lit from this direction (model space) */
+const LIGHT = vec3.normalize(vec3.create(), vec3.fromValues(0.4, 1, 0.6));
 
-	return faces.map(([normal, u, v, shade]) => {
-		const corner = (su: number, sv: number) => vec3.fromValues(
-			(normal[0] + su * u[0] + sv * v[0]) * halfSize,
-			(normal[1] + su * u[1] + sv * v[1]) * halfSize,
-			(normal[2] + su * u[2] + sv * v[2]) * halfSize,
-		);
-		const [r, g, b] = color.rgb;
-		return quad(corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1), new Color(r * shade, g * shade, b * shade));
-	});
+/**
+ * Triangle or quad of a solid, facing away from `inside`: wound counter-clockwise as seen from outside,
+ * so that it survives back-face culling, and shaded by the direction it faces
+ * @param points 3 or 4, in order around the face
+ */
+export function facet(points: vec3[], inside: ReadonlyVec3, color: Color): Triangle | Quad {
+	const [a, b, c] = points;
+	const normal = vec3.cross(vec3.create(), vec3.subtract(vec3.create(), b, a), vec3.subtract(vec3.create(), c, a));
+	const centroid = vec3.create();
+	for (const point of points) { vec3.scaleAndAdd(centroid, centroid, point, 1 / points.length); }
+	if (vec3.dot(normal, vec3.subtract(vec3.create(), centroid, inside)) < 0) {
+		points = [...points].reverse();
+		vec3.negate(normal, normal);
+	}
+
+	vec3.normalize(normal, normal);
+	const shade = 0.55 + 0.45 * Math.max(0, vec3.dot(normal, LIGHT));
+	const [r, g, bl] = color.rgb;
+	const shaded = new Color(r * shade, g * shade, bl * shade);
+
+	const [p1, p2, p3, p4] = points;
+	return (p4 ? quad(p1, p2, p3, p4, shaded) : triangle(p1, p2, p3, shaded));
+}
+
+/** Axis-aligned box between two opposite corners */
+export function cuboid(from: ReadonlyVec3, to: ReadonlyVec3, color: Color): Quad[] {
+	const center = vec3.lerp(vec3.create(), from, to, 0.5);
+	const corner = ([x, y, z]: readonly number[]) => vec3.fromValues(x ? to[0] : from[0], y ? to[1] : from[1], z ? to[2] : from[2]);
+	const faces = [
+		[[0, 0, 0], [0, 1, 0], [0, 1, 1], [0, 0, 1]], [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]],
+		[[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]], [[0, 1, 0], [1, 1, 0], [1, 1, 1], [0, 1, 1]],
+		[[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0]], [[0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]],
+	];
+	return faces.map(face => facet(face.map(corner), center, color) as Quad);
+}
+
+/** Torus around the Y axis: `radius` to the middle of the tube, `thickness` the tube radius */
+export function ring(radius: number, thickness: number, color: Color, segments = 16, sides = 6): Quad[] {
+	const point = (i: number, j: number) => {
+		const around = 2 * Math.PI * i / segments;
+		const tube = 2 * Math.PI * j / sides;
+		const r = radius + thickness * Math.cos(tube);
+		return vec3.fromValues(r * Math.cos(around), thickness * Math.sin(tube), r * Math.sin(around));
+	};
+
+	const quads: Quad[] = [];
+	for (let i = 0; i < segments; i++) {
+		const middle = 2 * Math.PI * (i + 0.5) / segments;
+		const tubeCenter = vec3.fromValues(radius * Math.cos(middle), 0, radius * Math.sin(middle));
+		for (let j = 0; j < sides; j++) {
+			quads.push(facet([point(i, j), point(i, j + 1), point(i + 1, j + 1), point(i + 1, j)], tubeCenter, color) as Quad);
+		}
+	}
+	return quads;
+}
+
+/** Square pyramid on the Y axis: base of half-width `halfBase` at height `baseY`, apex at `apexY` */
+export function pyramid(baseY: number, apexY: number, halfBase: number, color: Color): Geometry[] {
+	const corners = () => [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([x, z]) => vec3.fromValues(x * halfBase, baseY, z * halfBase));
+	const inside = vec3.fromValues(0, baseY + (apexY - baseY) / 4, 0);
+	const base = corners();
+	return [
+		...base.map((_, i) => {
+			const side = corners();
+			return facet([side[i], side[(i + 1) % 4], vec3.fromValues(0, apexY, 0)], inside, color);
+		}),
+		facet(base, inside, color),
+	];
 }
 
 /** Deep copy of the points; color and texture are shared */

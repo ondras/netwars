@@ -12,6 +12,13 @@ export const RAPID_FIRE_FACTOR = 2;
 /** Top speed multiplier while the boost effect lasts */
 export const BOOST_FACTOR = 1.5;
 
+/** Share of the speed kept after bumping into something */
+export const BUMP_SPEED_KEPT = 0.3;
+/** How long a ship spins after a bump (s) */
+export const TUMBLE_TIME = 1;
+/** Spin rate right after a bump (rad/s); it fades to nothing over TUMBLE_TIME, turning the ship about 45° */
+const TUMBLE_SPIN = 1.5;
+
 /** Remaining time of timed effects (s); 0 when inactive */
 export interface Effects {
 	rapid: number;
@@ -67,6 +74,9 @@ export class Ship extends Entity {
 	private pilot: Pilot | null = null;
 	protected weapon = new Weapon();
 
+	/** Spin after a bump (rad/s, local) added to the steering, and its remaining time (s) */
+	private readonly tumble = { spin: vec3.create(), time: 0 };
+
 	constructor() {
 		super();
 		this.hittable = true;
@@ -106,6 +116,25 @@ export class Ship extends Entity {
 		return this.shields.value > 0;
 	}
 
+	get tumbling(): boolean {
+		return this.tumble.time > 0;
+	}
+
+	/**
+	 * Knocked off course by bumping into something: most of the speed is lost and the ship spins for a moment.
+	 * The spin is a random mix of yaw and pitch, never roll, since there is no roll control to undo it.
+	 * @returns false, changing nothing, while the ship still spins from the previous bump
+	 */
+	bump(): boolean {
+		if (this.tumbling) { return false; }
+
+		this.engine.speed.value *= BUMP_SPEED_KEPT;
+		const direction = 2 * Math.PI * Math.random();
+		vec3.set(this.tumble.spin, TUMBLE_SPIN * Math.cos(direction), TUMBLE_SPIN * Math.sin(direction), 0);
+		this.tumble.time = TUMBLE_TIME;
+		return true;
+	}
+
 	override update(dt: number, world: World): void {
 		this.pilot?.update(dt, this, world);
 
@@ -119,11 +148,16 @@ export class Ship extends Entity {
 			if (shot) {
 				shot.target = this.shotTarget;
 				world.spawn(shot);
+				world.sound("cannon", this.position);
 			}
 		}
 
 		const { yaw, pitch } = this.engine;
 		vec3.set(this.angularVelocity, pitch.changeRate * pitch.control, yaw.changeRate * yaw.control, 0);
+		if (this.tumbling) {
+			vec3.scaleAndAdd(this.angularVelocity, this.angularVelocity, this.tumble.spin, this.tumble.time / TUMBLE_TIME);
+			this.tumble.time = Math.max(0, this.tumble.time - dt);
+		}
 
 		this.updateSpeed(dt);
 

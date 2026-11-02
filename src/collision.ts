@@ -1,9 +1,13 @@
 import { vec3, type ReadonlyVec3 } from "gl-matrix";
 import { explode } from "./entity/debris.ts";
 import type { Entity } from "./entity/entity.ts";
+import { Pod } from "./entity/pod.ts";
 import { Ship } from "./entity/ship.ts";
 import { Shot } from "./entity/shot.ts";
 import type { World } from "./world.ts";
+
+/** Part of the bounding spheres' reach at which bodies touch: models fill their spheres loosely */
+export const CONTACT = 0.75;
 
 /**
  * Where does the segment a→b enter the sphere?
@@ -60,6 +64,43 @@ export function resolveHits(entities: readonly Entity[], world: World): void {
 
 		shot.dead = true;
 		const survives = (hit instanceof Ship && hit.absorb(shot.damage));
-		if (!survives) { explode(hit, world); }
+		if (survives) {
+			world.sound(shot.impactSound, hit.position);
+		} else {
+			explode(hit, world);
+		}
+	}
+}
+
+const isBody = (entity: Entity): entity is Ship | Pod => (entity instanceof Ship || entity instanceof Pod) && !entity.dead && entity.radius > 0;
+const carries = (carrier: Entity, cargo: Entity) => (cargo instanceof Pod && cargo.carrier == carrier);
+
+/**
+ * Ships that touch a ship or a pod are pushed apart until they just touch (pods stay put)
+ * and bump: they slow down and spin for a moment. A pirate and the pod it carries do not collide.
+ */
+export function resolveCollisions(entities: readonly Entity[], world: World): void {
+	const bodies = entities.filter(isBody);
+
+	for (let i = 0; i < bodies.length; i++) {
+		for (let j = i + 1; j < bodies.length; j++) {
+			const a = bodies[i];
+			const b = bodies[j];
+			if (!(a instanceof Ship || b instanceof Ship) || carries(a, b) || carries(b, a)) { continue; }
+
+			const reach = CONTACT * (a.radius + b.radius);
+			const away = vec3.subtract(vec3.create(), a.position, b.position); /* from b towards a */
+			const distance = vec3.length(away);
+			if (distance >= reach) { continue; }
+
+			if (distance > 1e-6) { vec3.scale(away, away, 1 / distance); } else { vec3.set(away, 0, 1, 0); }
+			const overlap = reach - distance;
+			const share = (a instanceof Ship && b instanceof Ship ? 0.5 : 1);
+			if (a instanceof Ship) { vec3.scaleAndAdd(a.position, a.position, away, overlap * share); }
+			if (b instanceof Ship) { vec3.scaleAndAdd(b.position, b.position, away, -overlap * share); }
+
+			const bumped = [a, b].map(body => body instanceof Ship && body.bump());
+			if (bumped.includes(true)) { world.sound("impact", vec3.lerp(vec3.create(), a.position, b.position, 0.5)); }
+		}
 	}
 }

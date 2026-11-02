@@ -12,7 +12,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "gl-matrix": "3.4.4"
+    "gl-matrix": "3.4.4",
+    "jsfxr": "1.4.1"
   },
   "devDependencies": {
     "typescript": "7.0.2",

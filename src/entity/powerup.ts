@@ -1,6 +1,6 @@
 import { vec3 } from "gl-matrix";
 import { Color } from "../color.ts";
-import { box } from "../geometry.ts";
+import { cuboid, pyramid, ring, type Geometry } from "../geometry.ts";
 import type { World } from "../world.ts";
 import { Entity } from "./entity.ts";
 import type { Ship } from "./ship.ts";
@@ -12,17 +12,60 @@ export const SHIELD_BONUS = 40;
 /** Duration of the timed powerups (s) */
 export const EFFECT_TIME = 15;
 
-export const POWERUPS: Record<PowerupKind, { readonly label: string; readonly color: number }> = {
-	shields: { label: "Shields", color: 0x44ee66 },
-	rapid: { label: "Rapid fire", color: 0xffdd33 },
-	boost: { label: "Boost", color: 0x4499ff },
+/*
+ * Each kind has its own shape and colours, and none of them looks like the rest of the scene:
+ * ship and missile hulls are grey, white and red with touches of blue and green, pods are magenta octahedra.
+ */
+const SHIELDS_BLUE = 0x7fd8ff;
+const RAPID_YELLOW = 0xffd426;
+const RAPID_RED = 0xff3326;
+const BOOST_GREEN = 0x55ee55;
+
+/** Light blue ring */
+function shieldsShape(): Geometry[] {
+	return ring(0.45, 0.14, new Color(SHIELDS_BLUE));
+}
+
+/** Yellow three-way cross with red tips */
+function rapidShape(): Geometry[] {
+	const geometries: Geometry[] = [];
+	for (const axis of [0, 1, 2]) {
+		const from = vec3.fromValues(-0.08, -0.08, -0.08);
+		const to = vec3.fromValues(0.08, 0.08, 0.08);
+		from[axis] = -0.42;
+		to[axis] = 0.42;
+		geometries.push(...cuboid(from, to, new Color(RAPID_YELLOW)));
+
+		for (const side of [-1, 1]) {
+			const inner = vec3.fromValues(-0.11, -0.11, -0.11);
+			const outer = vec3.fromValues(0.11, 0.11, 0.11);
+			inner[axis] = side * 0.42;
+			outer[axis] = side * 0.55;
+			geometries.push(...cuboid(inner, outer, new Color(RAPID_RED)));
+		}
+	}
+	return geometries;
+}
+
+/** Green arrow */
+function boostShape(): Geometry[] {
+	const green = new Color(BOOST_GREEN);
+	return [
+		...cuboid(vec3.fromValues(-0.09, -0.55, -0.09), vec3.fromValues(0.09, 0.05, 0.09), green),
+		...pyramid(0.05, 0.55, 0.3, green),
+	];
+}
+
+export const POWERUPS: Record<PowerupKind, { readonly label: string; readonly shape: () => Geometry[] }> = {
+	shields: { label: "Shields", shape: shieldsShape },
+	rapid: { label: "Rapid fire", shape: rapidShape },
+	boost: { label: "Boost", shape: boostShape },
 };
 
-const HALF_SIZE = 0.45;
 /** Collected within this gap between the bounding spheres (m) */
 const PICKUP_GAP = 1;
 
-/** Spinning cube, collected by flying through it */
+/** Tumbling shape, collected by flying through it */
 export class Powerup extends Entity {
 	readonly kind: PowerupKind;
 	private readonly player: Ship;
@@ -31,7 +74,7 @@ export class Powerup extends Entity {
 		super();
 		this.kind = kind;
 		this.player = player;
-		this.geometries = box(HALF_SIZE, new Color(POWERUPS[kind].color));
+		this.geometries = POWERUPS[kind].shape();
 		vec3.set(this.angularVelocity, 0.8, 1.6, 0);
 	}
 
@@ -42,6 +85,7 @@ export class Powerup extends Entity {
 		if (player.dead) { return; }
 		if (vec3.distance(this.position, player.position) <= this.radius + player.radius + PICKUP_GAP) {
 			applyPowerup(this.kind, player);
+			world.sound("powerup");
 			this.dead = true;
 		}
 	}

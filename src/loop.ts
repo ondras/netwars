@@ -1,4 +1,6 @@
-import { resolveHits } from "./collision.ts";
+import type { ReadonlyVec3 } from "gl-matrix";
+import type { SoundName } from "./audio/sounds.ts";
+import { resolveCollisions, resolveHits } from "./collision.ts";
 import type { Entity } from "./entity/entity.ts";
 import type { Renderer } from "./render/renderer.ts";
 import type { World } from "./world.ts";
@@ -16,6 +18,8 @@ export class Loop implements World {
 	readonly renderers: Renderer[] = [];
 	/** Called after every simulation step */
 	onStep: (() => void) | null = null;
+	/** Called for every sound effect an entity makes */
+	onSound: ((name: SoundName, at?: ReadonlyVec3) => void) | null = null;
 
 	private readonly options: LoopOptions;
 	private readonly spawned: Entity[] = [];
@@ -43,6 +47,10 @@ export class Loop implements World {
 
 	spawn(...entities: Entity[]): void {
 		this.spawned.push(...entities);
+	}
+
+	sound(name: SoundName, at?: ReadonlyVec3): void {
+		this.onSound?.(name, at);
 	}
 
 	/** Remove everything from the scene, releasing renderer resources */
@@ -78,6 +86,7 @@ export class Loop implements World {
 
 		for (const entity of scene) { entity.update(dt, this); }
 		resolveHits(scene, this);
+		resolveCollisions(scene, this);
 
 		let i = 0;
 		while (i < scene.length) {

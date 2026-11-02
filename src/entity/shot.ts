@@ -1,4 +1,5 @@
 import { vec3 } from "gl-matrix";
+import type { SoundName } from "../audio/sounds.ts";
 import { Color } from "../color.ts";
 import { circle } from "../geometry.ts";
 import type { World } from "../world.ts";
@@ -16,6 +17,8 @@ export class Shot extends Entity {
 	target: Entity | null = null;
 	/** Shield points taken from a ship on hit */
 	readonly damage: number;
+	/** Heard when it hits a ship that survives the hit */
+	readonly impactSound: SoundName = "hit";
 	/** Remaining life span (s) */
 	private time: number;
 

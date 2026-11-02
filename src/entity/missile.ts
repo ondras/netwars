@@ -1,4 +1,5 @@
 import { quat, vec3, type ReadonlyVec3 } from "gl-matrix";
+import type { SoundName } from "../audio/sounds.ts";
 import type { World } from "../world.ts";
 import type { Entity } from "./entity.ts";
 import { Shot } from "./shot.ts";
@@ -34,6 +35,7 @@ const DEFAULTS: MissileOptions = {
  * It can itself be shot down.
  */
 export class Missile extends Shot {
+	override readonly impactSound: SoundName = "impact";
 	private readonly turnRate: number;
 
 	constructor(position: ReadonlyVec3, direction: ReadonlyVec3, owner: Entity, target: Entity, options: Partial<MissileOptions> = {}) {

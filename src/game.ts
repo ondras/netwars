@@ -1,4 +1,5 @@
 import { mat4 } from "gl-matrix";
+import { SoundPlayer } from "./audio/player.ts";
 import { Camera } from "./camera.ts";
 import { Pod } from "./entity/pod.ts";
 import { Ship } from "./entity/ship.ts";
@@ -37,6 +38,7 @@ export class Game {
 	private readonly loop = new Loop();
 	private readonly camera = new Camera();
 	private readonly hud = new HUD(this.camera);
+	private readonly sounds = new SoundPlayer();
 	private readonly pilot: PlayerPilot;
 	private session: Session | null = null;
 
@@ -49,6 +51,7 @@ export class Game {
 		this.loop.renderers.push(scene, this.hud);
 
 		this.loop.onStep = () => this.step();
+		this.loop.onSound = (name, at) => this.sounds.play(name, at);
 		this.loop.start();
 	}
 
@@ -57,8 +60,10 @@ export class Game {
 		return this.session?.level ?? null;
 	}
 
+	/** Call from a click or key press handler: that is when browsers let audio start */
 	start(level: number): void {
 		this.stop();
+		this.sounds.unlock();
 		const config = LEVELS[level];
 
 		const ship = new Ship().fromNSH("missile");
@@ -82,6 +87,7 @@ export class Game {
 
 		this.session = { level, ship, enemies, pods, outcome: null };
 		this.camera.follow(ship);
+		this.sounds.listener = ship;
 		this.hud.ship = ship;
 		this.hud.status = () => this.status();
 	}
@@ -91,6 +97,7 @@ export class Game {
 		this.loop.clear();
 		this.session = null;
 		this.camera.follow(null);
+		this.sounds.listener = null;
 		this.hud.ship = null;
 		this.hud.status = null;
 	}
