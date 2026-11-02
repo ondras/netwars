@@ -81,6 +81,20 @@ describe("shots", () => {
 		expect(count(loop, Shot)).toBe(0);
 	});
 
+	it("appear at the muzzle, rotated with the owner", () => {
+		const owner = new Entity();
+		vec3.set(owner.position, 10, 0, 0);
+		owner.orientation[1] = Math.SQRT1_2; /* 90° left: ahead is -X */
+		owner.orientation[3] = Math.SQRT1_2;
+
+		const shot = new Weapon({ muzzle: [0, -0.3, -3] }).fire(owner)!;
+
+		expect(shot.position[0]).toBeCloseTo(7);
+		expect(shot.position[1]).toBeCloseTo(-0.3);
+		expect(shot.position[2]).toBeCloseTo(0);
+		expect(shot.velocity[0]).toBeLessThan(0);
+	});
+
 	it("inherit the owner's velocity", () => {
 		const owner = new Entity();
 		vec3.set(owner.velocity, 0, 0, -10);
@@ -123,6 +137,22 @@ describe("explosions", () => {
 		explode(b, loop);
 
 		shared[0].points.forEach((point, i) => expect(vec3.equals(point, before[i])).toBe(true));
+	});
+
+	it("send debris away at a constant speed for at most 3 s", () => {
+		const loop = new Loop();
+		explode(target(0), loop);
+		loop.update(STEP);
+
+		const debris = loop.scene.filter(entity => entity instanceof Debris);
+		const speeds = debris.map(entity => vec3.length(entity.velocity));
+		expect(Math.min(...speeds)).toBeGreaterThan(0);
+
+		run(loop, 1);
+		debris.forEach((entity, i) => expect(vec3.length(entity.velocity)).toBeCloseTo(speeds[i]));
+
+		run(loop, 2);
+		expect(count(loop, Debris)).toBe(0);
 	});
 
 	it("happen only once", () => {

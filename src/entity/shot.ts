@@ -4,6 +4,9 @@ import { circle } from "../geometry.ts";
 import type { World } from "../world.ts";
 import { Entity } from "./entity.ts";
 
+/** Visual and hit-test radius (m) */
+const RADIUS = 0.15;
+
 export class Shot extends Entity {
 	/** Position before the last update; the segment to it is used for hit tests */
 	readonly previousPosition = vec3.create();
@@ -21,7 +24,7 @@ export class Shot extends Entity {
 		this.owner = owner;
 		this.time = lifetime;
 
-		this.geometries = [circle(vec3.create(), 0.5, new Color(0xffffff))];
+		this.geometries = [circle(vec3.create(), RADIUS, new Color(0xffffff))];
 	}
 
 	override update(dt: number, world: World): void {

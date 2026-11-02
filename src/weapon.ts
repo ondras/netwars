@@ -9,15 +9,18 @@ export interface WeaponOptions {
 	muzzleSpeed: number;
 	/** Shot life span (s) */
 	lifetime: number;
-	/** Distance in front of the firing entity where shots appear (m) */
-	muzzleOffset: number;
+	/**
+	 * Where shots appear, in the firing entity's local frame (m; -Z is ahead).
+	 * Shots fly parallel to the forward axis, so an offset below it keeps them from covering the aim point.
+	 */
+	muzzle: readonly [number, number, number];
 }
 
 const DEFAULTS: WeaponOptions = {
 	reload: 0.15,
-	muzzleSpeed: 50,
-	lifetime: 2,
-	muzzleOffset: 1,
+	muzzleSpeed: 120,
+	lifetime: 1.5,
+	muzzle: [0, -0.3, -3],
 };
 
 export class Weapon {
@@ -38,11 +41,14 @@ export class Weapon {
 		if (this.cooldown > 0) { return null; }
 		this.cooldown = this.options.reload;
 
+		const { muzzle, muzzleSpeed } = this.options;
+
 		/* -Z is the default model orientation */
 		const direction = vec3.transformQuat(vec3.create(), vec3.fromValues(0, 0, -1), owner.orientation);
+		const offset = vec3.transformQuat(vec3.create(), vec3.fromValues(...muzzle), owner.orientation);
 
-		const position = vec3.scaleAndAdd(vec3.create(), owner.position, direction, this.options.muzzleOffset);
-		const velocity = vec3.scaleAndAdd(vec3.create(), owner.velocity, direction, this.options.muzzleSpeed);
+		const position = vec3.add(vec3.create(), owner.position, offset);
+		const velocity = vec3.scaleAndAdd(vec3.create(), owner.velocity, direction, muzzleSpeed);
 
 		return new Shot(position, velocity, owner, this.options.lifetime);
 	}

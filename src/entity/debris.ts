@@ -6,10 +6,17 @@ import { Entity } from "./entity.ts";
 
 const COLORS = [0xff1111, 0xff4411, 0xff7711, 0xffaa11, 0xffdd11];
 
+/** Typical speed of debris flying away from the explosion center (m/s) */
+export const EXPLOSION_SPEED = 6;
+
+/** Life span range (s) */
+const MIN_LIFETIME = 2;
+const MAX_LIFETIME = 3;
+
+/** Flies away at a constant speed, then disappears */
 export class Debris extends Entity {
 	/** Remaining life span (s) */
-	private time = 4 + 3 * Math.random();
-	private readonly initialVelocity: vec3;
+	private time = MIN_LIFETIME + (MAX_LIFETIME - MIN_LIFETIME) * Math.random();
 
 	constructor(parent: Entity, velocity: vec3) {
 		super();
@@ -17,10 +24,10 @@ export class Debris extends Entity {
 		vec3.copy(this.position, parent.position);
 
 		/* adjust randomly */
-		this.initialVelocity = vec3.scale(vec3.create(), velocity, 1 + (Math.random() - 0.5));
+		vec3.scale(this.velocity, velocity, 1 + (Math.random() - 0.5));
 
 		/* do not forget to also add parent's velocity part */
-		vec3.scaleAndAdd(this.initialVelocity, this.initialVelocity, parent.velocity, 0.5);
+		vec3.scaleAndAdd(this.velocity, this.velocity, parent.velocity, 0.5);
 	}
 
 	/** Create new debris representing a geometry component of the parent */
@@ -74,14 +81,15 @@ export class Debris extends Entity {
 			return;
 		}
 
-		vec3.scale(this.velocity, this.initialVelocity, this.time ** 2 / 20);
-
 		super.update(dt, world);
 	}
 }
 
-/** Destroy the entity, replacing it with debris */
-export function explode(entity: Entity, world: World, force = 1): void {
+/**
+ * Destroy the entity, replacing it with debris
+ * @param force Typical debris speed (m/s)
+ */
+export function explode(entity: Entity, world: World, force = EXPLOSION_SPEED): void {
 	if (entity.dead) { return; }
 	entity.dead = true;
 

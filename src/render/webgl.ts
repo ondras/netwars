@@ -1,4 +1,4 @@
-import { mat4 } from "gl-matrix";
+import { mat4, vec3 } from "gl-matrix";
 import type { Camera } from "../camera.ts";
 import { Color } from "../color.ts";
 import type { Entity } from "../entity/entity.ts";
@@ -8,6 +8,8 @@ import billboardFrag from "../shaders/billboard.frag?raw";
 import billboardVert from "../shaders/billboard.vert?raw";
 import simpleFrag from "../shaders/simple.frag?raw";
 import simpleVert from "../shaders/simple.vert?raw";
+import starFrag from "../shaders/star.frag?raw";
+import starVert from "../shaders/star.vert?raw";
 
 interface Program<A extends string, U extends string> {
 	program: WebGLProgram;
@@ -17,6 +19,20 @@ interface Program<A extends string, U extends string> {
 
 type SimpleProgram = Program<"aPosition" | "aColor", "uPmatrix" | "uMVmatrix">;
 type BillboardProgram = Program<"aPosition" | "aRadius", "uPmatrix" | "uMVmatrix" | "uTexture" | "uViewport">;
+type StarProgram = Program<"aPosition" | "aBrightness", "uPmatrix" | "uVmatrix" | "uSize">;
+type AnyProgram = SimpleProgram | BillboardProgram | StarProgram;
+
+const STAR_COUNT = 800;
+/** CSS pixels */
+const STAR_SIZE = 2;
+/** Within the camera's far plane; only the view rotation is applied, so the distance just has to be visible */
+const STAR_DISTANCE = 1000;
+
+interface Stars {
+	points: WebGLBuffer;
+	brightness: WebGLBuffer;
+	count: number;
+}
 
 interface ColoredSet {
 	points: WebGLBuffer;
@@ -45,9 +61,12 @@ export class WebGLRenderer implements Renderer {
 	readonly node = document.createElement("canvas");
 	private readonly camera: Camera;
 	private readonly gl: WebGLRenderingContext;
-	private readonly programs: { simple: SimpleProgram; billboard: BillboardProgram };
-	private currentProgram: SimpleProgram | BillboardProgram | null = null;
+	private readonly programs: { simple: SimpleProgram; billboard: BillboardProgram; star: StarProgram };
+	private currentProgram: AnyProgram | null = null;
+	/** Programs that need the projection matrix uploaded before use (it may change every frame) */
+	private readonly staleProjection = new Set<AnyProgram>();
 	private readonly entityData = new WeakMap<Entity, EntityData>();
+	private readonly stars: Stars;
 
 	constructor(camera: Camera, background = new Color(0)) {
 		this.camera = camera;
@@ -63,7 +82,10 @@ export class WebGLRenderer implements Renderer {
 				["aPosition", "aRadius"],
 				["uPmatrix", "uMVmatrix", "uTexture", "uViewport"],
 			),
+			star: this.createProgram(starVert, starFrag, ["aPosition", "aBrightness"], ["uPmatrix", "uVmatrix", "uSize"]),
 		};
+
+		this.stars = this.createStars();
 
 		gl.enable(gl.CULL_FACE);
 		gl.enable(gl.DEPTH_TEST);
@@ -80,10 +102,11 @@ export class WebGLRenderer implements Renderer {
 			this.camera.syncPort(node);
 		}
 		this.camera.update();
-		this.currentProgram = null; /* projection may have changed; useProgram() uploads it */
+		for (const program of Object.values(this.programs)) { this.staleProjection.add(program); }
 
 		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
+		this.drawStars();
 		for (const entity of entities) { this.renderEntity(entity); }
 	}
 
@@ -144,6 +167,42 @@ export class WebGLRenderer implements Renderer {
 				gl.drawArrays(gl.POINTS, index, 1);
 			});
 		}
+	}
+
+	/** Background stars: rotate with the view, never get closer; drawn without writing depth */
+	private drawStars(): void {
+		const { gl, stars } = this;
+		const program = this.programs.star;
+		this.useProgram(program);
+		const { attributes: a, uniforms: u } = program;
+
+		const rotation = mat4.clone(this.camera.vMatrix);
+		rotation[12] = rotation[13] = rotation[14] = 0;
+		gl.uniformMatrix4fv(u.uVmatrix, false, rotation as Float32Array);
+		gl.uniform1f(u.uSize, Math.max(1, Math.round(STAR_SIZE * (window.devicePixelRatio || 1))));
+
+		gl.bindBuffer(gl.ARRAY_BUFFER, stars.points);
+		gl.vertexAttribPointer(a.aPosition, 3, gl.FLOAT, false, 0, 0);
+
+		gl.bindBuffer(gl.ARRAY_BUFFER, stars.brightness);
+		gl.vertexAttribPointer(a.aBrightness, 1, gl.FLOAT, false, 0, 0);
+
+		gl.depthMask(false);
+		gl.drawArrays(gl.POINTS, 0, stars.count);
+		gl.depthMask(true);
+	}
+
+	/** Uniformly distributed on a sphere, mostly dim */
+	private createStars(): Stars {
+		const points: number[] = [];
+		const brightness: number[] = [];
+
+		for (let i = 0; i < STAR_COUNT; i++) {
+			points.push(...vec3.random(vec3.create(), STAR_DISTANCE));
+			brightness.push(0.35 + 0.65 * Math.random() ** 2);
+		}
+
+		return { points: this.buffer(points), brightness: this.buffer(brightness), count: STAR_COUNT };
 	}
 
 	private drawColored(set: ColoredSet, mode: GLenum, verticesPerPrimitive: number, mvMatrix: Float32Array): void {
@@ -250,7 +309,6 @@ export class WebGLRenderer implements Renderer {
 
 		for (const name of attributes) {
 			result.attributes[name] = gl.getAttribLocation(program, name);
-			gl.enableVertexAttribArray(result.attributes[name]);
 		}
 
 		for (const name of uniforms) {
@@ -260,13 +318,25 @@ export class WebGLRenderer implements Renderer {
 		return result;
 	}
 
-	private useProgram(program: SimpleProgram | BillboardProgram): void {
-		if (program == this.currentProgram) { return; }
-		this.currentProgram = program;
-
+	private useProgram(program: AnyProgram): void {
 		const { gl } = this;
-		gl.useProgram(program.program);
-		gl.uniformMatrix4fv(program.uniforms.uPmatrix, false, this.camera.pMatrix as Float32Array);
+
+		if (program != this.currentProgram) {
+			/* enable exactly the attribute arrays the new program reads */
+			const previous: number[] = (this.currentProgram ? Object.values(this.currentProgram.attributes) : []);
+			const next: number[] = Object.values(program.attributes);
+			for (const location of previous) {
+				if (!next.includes(location)) { gl.disableVertexAttribArray(location); }
+			}
+			for (const location of next) { gl.enableVertexAttribArray(location); }
+
+			this.currentProgram = program;
+			gl.useProgram(program.program);
+		}
+
+		if (this.staleProjection.delete(program)) {
+			gl.uniformMatrix4fv(program.uniforms.uPmatrix, false, this.camera.pMatrix as Float32Array);
+		}
 	}
 
 	private texture(source: Texture): WebGLTexture {
