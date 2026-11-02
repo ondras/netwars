@@ -1,6 +1,7 @@
 import { vec3, type ReadonlyVec3 } from "gl-matrix";
 import { explode } from "./entity/debris.ts";
 import type { Entity } from "./entity/entity.ts";
+import { Ship } from "./entity/ship.ts";
 import { Shot } from "./entity/shot.ts";
 import type { World } from "./world.ts";
 
@@ -18,7 +19,7 @@ export function segmentHitsSphere(a: ReadonlyVec3, b: ReadonlyVec3, center: Read
 
 /**
  * Test the path each shot travelled during the last step against bounding spheres of hittable entities.
- * A hit removes the shot and explodes the target.
+ * A hit removes the shot; ships lose shields and explode when depleted, anything else explodes at once.
  */
 export function resolveHits(entities: readonly Entity[], world: World): void {
 	for (const shot of entities) {
@@ -29,7 +30,8 @@ export function resolveHits(entities: readonly Entity[], world: World): void {
 
 			if (segmentHitsSphere(shot.previousPosition, shot.position, target.position, target.radius + shot.radius)) {
 				shot.dead = true;
-				explode(target, world);
+				const survives = (target instanceof Ship && target.absorb(shot.damage));
+				if (!survives) { explode(target, world); }
 				break;
 			}
 		}

@@ -9,6 +9,8 @@ export interface WeaponOptions {
 	muzzleSpeed: number;
 	/** Shot life span (s) */
 	lifetime: number;
+	/** Shield points a hit takes from a ship */
+	damage: number;
 	/**
 	 * Where shots appear, in the firing entity's local frame (m; -Z is ahead).
 	 * Shots fly parallel to the forward axis, so an offset below it keeps them from covering the aim point.
@@ -20,6 +22,7 @@ const DEFAULTS: WeaponOptions = {
 	reload: 0.15,
 	muzzleSpeed: 120,
 	lifetime: 1.5,
+	damage: 25,
 	muzzle: [0, -0.3, -3],
 };
 
@@ -50,6 +53,6 @@ export class Weapon {
 		const position = vec3.add(vec3.create(), owner.position, offset);
 		const velocity = vec3.scaleAndAdd(vec3.create(), owner.velocity, direction, muzzleSpeed);
 
-		return new Shot(position, velocity, owner, this.options.lifetime);
+		return new Shot(position, velocity, owner, this.options.lifetime, this.options.damage);
 	}
 }

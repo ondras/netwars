@@ -12,10 +12,12 @@ export class Shot extends Entity {
 	readonly previousPosition = vec3.create();
 	/** Shots never hit their owner */
 	readonly owner: Entity | null;
+	/** Shield points taken from a ship on hit */
+	readonly damage: number;
 	/** Remaining life span (s) */
 	private time: number;
 
-	constructor(position: vec3, velocity: vec3, owner: Entity | null, lifetime: number) {
+	constructor(position: vec3, velocity: vec3, owner: Entity | null, lifetime: number, damage: number) {
 		super();
 
 		vec3.copy(this.position, position);
@@ -23,6 +25,7 @@ export class Shot extends Entity {
 		vec3.copy(this.velocity, velocity);
 		this.owner = owner;
 		this.time = lifetime;
+		this.damage = damage;
 
 		this.geometries = [circle(vec3.create(), RADIUS, new Color(0xffffff))];
 	}

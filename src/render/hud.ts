@@ -6,8 +6,19 @@ import { RadarScope } from "./radar-scope.ts";
 import { syncCanvasSize, type Renderer } from "./renderer.ts";
 
 const COLOR = "rgba(110, 255, 140, 0.85)";
+/** Shields below WARNING_LEVEL */
+const COLOR_WARNING = "rgba(255, 90, 60, 0.95)";
+const WARNING_LEVEL = 0.25;
 const FONT = "12px ui-monospace, monospace";
 const HELP = "Mouse: steer · Button: fire · W / S: speed up / down (hold to repeat)";
+
+/** Meter size and placement (px) */
+const METER_WIDTH = 10;
+const METER_HEIGHT = 160;
+const METER_LEFT = 24;
+const METER_SPACING = 120;
+/** Space below the meters for their labels */
+const METER_BOTTOM = 56;
 
 /** Distance ahead of the ship where the crosshair is placed (m) */
 const AIM_DISTANCE = 40;
@@ -53,7 +64,8 @@ export class HUD implements Renderer {
 
 		this.drawCrosshair(width, height);
 		this.drawStick(width, height);
-		this.drawSpeed(height);
+		this.drawSpeed(METER_LEFT, height - METER_BOTTOM);
+		this.drawShields(METER_LEFT + METER_SPACING, height - METER_BOTTOM);
 		this.radar.draw(ctx, this.ship, entities, width - RADAR_WIDTH - 16, height - RADAR_HEIGHT - 16, RADAR_WIDTH, RADAR_HEIGHT);
 	}
 
@@ -91,26 +103,58 @@ export class HUD implements Renderer {
 		this.ctx.stroke();
 	}
 
-	private drawSpeed(height: number): void {
+	/** Zero in the middle: forward speed fills upwards, reverse downwards; the tick marks the target speed */
+	private drawSpeed(x: number, bottom: number): void {
 		const { ctx } = this;
 		const { speed } = this.ship.engine;
 
-		const barHeight = 120;
-		const x = 24;
-		const bottom = height - 48;
-		const fill = Math.min(1, Math.abs(speed.value) / speed.limit) * barHeight;
-		const target = bottom - Math.min(1, speed.target / speed.limit) * barHeight;
+		const half = METER_HEIGHT / 2;
+		const zero = bottom - half;
+		const toY = (value: number) => zero - Math.max(-1, Math.min(1, value / speed.limit)) * half;
 
-		ctx.strokeRect(x, bottom - barHeight, 10, barHeight);
-		ctx.fillRect(x, bottom - fill, 10, fill);
+		ctx.strokeRect(x, bottom - METER_HEIGHT, METER_WIDTH, METER_HEIGHT);
+		const y = toY(speed.value);
+		ctx.fillRect(x, Math.min(y, zero), METER_WIDTH, Math.abs(zero - y));
 
-		/* target speed tick */
+		/* zero line */
+		ctx.save();
+		ctx.globalAlpha = 0.5;
+		ctx.beginPath();
+		ctx.moveTo(x - 6, zero);
+		ctx.lineTo(x + METER_WIDTH + 6, zero);
+		ctx.stroke();
+		ctx.restore();
+
+		/* target speed */
+		const target = toY(speed.target);
 		ctx.beginPath();
 		ctx.moveTo(x - 4, target);
-		ctx.lineTo(x + 14, target);
+		ctx.lineTo(x + METER_WIDTH + 4, target);
 		ctx.stroke();
 
-		ctx.fillText(`SPD ${speed.value.toFixed(1)} m/s`, x, bottom + 18);
-		ctx.fillText(`SET ${speed.target.toFixed(0)} m/s`, x, bottom + 34);
+		ctx.fillText(`SPD ${signed(speed.value, 1)} m/s`, x, bottom + 18);
+		ctx.fillText(`SET ${signed(speed.target, 0)} m/s`, x, bottom + 34);
 	}
+
+	private drawShields(x: number, bottom: number): void {
+		const { ctx } = this;
+		const { value, max } = this.ship.shields;
+		const level = Math.max(0, Math.min(1, value / max));
+		const fill = level * METER_HEIGHT;
+
+		ctx.save();
+		ctx.strokeStyle = ctx.fillStyle = (level < WARNING_LEVEL ? COLOR_WARNING : COLOR);
+		ctx.strokeRect(x, bottom - METER_HEIGHT, METER_WIDTH, METER_HEIGHT);
+		ctx.fillRect(x, bottom - fill, METER_WIDTH, fill);
+		ctx.fillText(`SHD ${Math.round(level * 100)} %`, x, bottom + 18);
+		ctx.restore();
+	}
+}
+
+/** "+1.5", "-3", "0.0" (never "-0.0") */
+function signed(value: number, digits: number): string {
+	const text = value.toFixed(digits);
+	const rounded = Number(text);
+	if (rounded == 0) { return (0).toFixed(digits); }
+	return (rounded > 0 ? `+${text}` : text);
 }

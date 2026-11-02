@@ -182,18 +182,52 @@ describe("speed", () => {
 		expect(ship.velocity[2]).toBeCloseTo(-5); /* along -Z, the default heading */
 	});
 
-	it("brakes to a lower target and stays within 0..limit", () => {
+	it("goes into reverse and stays within ±limit", () => {
 		const loop = new Loop();
 		const ship = new Ship();
+		const { limit } = ship.engine.speed;
 		loop.scene.push(ship);
 
 		ship.engine.speed.target = 100;
 		run(loop, 2);
-		expect(ship.engine.speed.value).toBeCloseTo(ship.engine.speed.limit);
+		expect(ship.engine.speed.value).toBeCloseTo(limit);
 
 		ship.engine.speed.target = -100;
-		run(loop, 2);
-		expect(ship.engine.speed.value).toBeCloseTo(0);
+		run(loop, 3);
+		expect(ship.engine.speed.value).toBeCloseTo(-limit);
+		expect(ship.velocity[2]).toBeCloseTo(limit); /* moving backwards: +Z */
+	});
+});
+
+describe("shields", () => {
+	/** Ship 20 m ahead of an armed one, both with a 1 m bounding sphere */
+	function duel(): { loop: Loop; shooter: Ship; victim: Ship } {
+		const loop = new Loop();
+		const shooter = new Ship();
+		shooter.trigger = true;
+		const victim = new Ship();
+		victim.geometries = target(-20).geometries;
+		victim.position[2] = -20;
+		loop.scene.push(shooter, victim);
+		return { loop, shooter, victim };
+	}
+
+	it("absorb hits until depleted", () => {
+		const { loop, victim } = duel();
+
+		run(loop, 0.25); /* first shot arrives after ~0.15 s */
+		expect(victim.dead).toBe(false);
+		expect(victim.shields.value).toBeLessThan(victim.shields.max);
+		expect(victim.shields.value).toBeGreaterThan(0);
+	});
+
+	it("destroy the ship when depleted", () => {
+		const { loop, victim } = duel();
+
+		run(loop, 2); /* 4 hits at 25 points, one every 0.15 s */
+		expect(victim.shields.value).toBe(0);
+		expect(victim.dead).toBe(true);
+		expect(count(loop, Debris)).toBeGreaterThan(0);
 	});
 });
 

@@ -5,14 +5,19 @@ import type { World } from "../world.ts";
 import { Entity } from "./entity.ts";
 
 interface Throttle {
-	/** Current speed (m/s) */
+	/** Current speed (m/s); negative is reverse */
 	value: number;
-	/** Speed the engine accelerates or brakes towards (m/s), 0..limit */
+	/** Speed the engine accelerates or brakes towards (m/s), -limit..limit */
 	target: number;
 	/** Acceleration and braking (m/s^2) */
 	changeRate: number;
-	/** Top speed (m/s) */
+	/** Top speed, forward and reverse (m/s) */
 	limit: number;
+}
+
+interface Shields {
+	value: number;
+	max: number;
 }
 
 interface Axis {
@@ -35,6 +40,9 @@ export class Ship extends Entity {
 		pitch: { changeRate: 3.5, control: 0 },
 	};
 
+	/** Absorb hits; the ship is destroyed when they are depleted */
+	readonly shields: Shields = { value: 100, max: 100 };
+
 	/** Fire whenever the weapon is ready */
 	trigger = false;
 
@@ -49,6 +57,12 @@ export class Ship extends Entity {
 	setPilot(pilot: Pilot): this {
 		this.pilot = pilot;
 		return this;
+	}
+
+	/** @returns Whether the ship survives the hit */
+	absorb(damage: number): boolean {
+		this.shields.value = Math.max(0, this.shields.value - damage);
+		return this.shields.value > 0;
 	}
 
 	override update(dt: number, world: World): void {
@@ -71,7 +85,7 @@ export class Ship extends Entity {
 	private updateSpeed(dt: number): void {
 		const speed = this.engine.speed;
 
-		const target = Math.min(speed.limit, Math.max(0, speed.target));
+		const target = Math.min(speed.limit, Math.max(-speed.limit, speed.target));
 		const maxChange = speed.changeRate * dt;
 		speed.value += Math.max(-maxChange, Math.min(maxChange, target - speed.value));
 
