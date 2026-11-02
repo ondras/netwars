@@ -8,7 +8,7 @@ import { Missile } from "./entity/missile.ts";
 import { ESCAPE_RADIUS, Pirate } from "./entity/pirate.ts";
 import { Pod } from "./entity/pod.ts";
 import { Ship } from "./entity/ship.ts";
-import { PirateSpawner } from "./entity/spawner.ts";
+import { EnemySpawner } from "./entity/spawner.ts";
 import { triangle } from "./geometry.ts";
 import { Loop } from "./loop.ts";
 import { settle, stubModels } from "./testing.ts";
@@ -200,7 +200,7 @@ describe("pirates", () => {
 	/** Run a fresh spawner once and return its pirate */
 	function spawnOne(player: Ship, pods: Pod[]): Pirate {
 		const loop = new Loop();
-		loop.scene.push(...pods, new PirateSpawner(player, { max: 1, firstDelay: 0, minDistance: 120 }));
+		loop.scene.push(...pods, new EnemySpawner(player, ["pirate"], { max: 1, firstDelay: 0, minDistance: 120 }));
 		loop.update(STEP);
 		loop.update(STEP);
 		return loop.scene.find(entity => entity instanceof Pirate)!;
@@ -241,7 +241,7 @@ describe("pirates", () => {
 
 	it("are sent in up to the limit, and replaced", async () => {
 		const loop = new Loop();
-		loop.scene.push(new PirateSpawner(absentPlayer(), { max: 2, firstDelay: 0, interval: 1 }));
+		loop.scene.push(new EnemySpawner(absentPlayer(), ["pirate", "pirate", "pirate", "pirate"], { max: 2, firstDelay: 0, interval: 1 }));
 		const pirates = () => loop.scene.filter(entity => entity instanceof Pirate);
 
 		run(loop, 5);

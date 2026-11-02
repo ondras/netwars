@@ -1,18 +1,21 @@
 import { quat, vec3 } from "gl-matrix";
+import type { EnemyKind } from "../levels.ts";
 import type { World } from "../world.ts";
 import { Entity } from "./entity.ts";
+import { Hunter } from "./hunter.ts";
 import { Pirate } from "./pirate.ts";
 import { Pod } from "./pod.ts";
+import { Powerup, type PowerupKind } from "./powerup.ts";
 import type { Ship } from "./ship.ts";
 
-export interface SpawnerOptions {
-	/** Most pirates alive at once */
+export interface EnemySpawnerOptions {
+	/** Most enemies present at once */
 	max: number;
-	/** Before the first pirate (s) */
+	/** Before the first enemy (s) */
 	firstDelay: number;
-	/** Between pirates, counted while below max (s) */
+	/** Between enemies, counted while below max (s) */
 	interval: number;
-	/** Pirates never appear closer than this to the player, horizontally (m) */
+	/** Enemies never appear closer than this to the player, horizontally (m) */
 	minDistance: number;
 	/** How far beyond the far edge of the pod field pirates appear (m) */
 	behind: number;
@@ -20,7 +23,7 @@ export interface SpawnerOptions {
 	spread: number;
 }
 
-const DEFAULTS: SpawnerOptions = {
+const ENEMY_DEFAULTS: EnemySpawnerOptions = {
 	max: 2,
 	firstDelay: 5,
 	interval: 20,
@@ -30,61 +33,65 @@ const DEFAULTS: SpawnerOptions = {
 };
 
 /**
- * Invisible scene member that sends in pirates from beyond the pods as seen by the player,
- * so that the pods are in the line of fire. Without free pods, pirates appear at minDistance in any direction.
+ * Invisible scene member that sends in a level's enemies in order.
+ * Pirates arrive from beyond the pods as seen by the player, so that the pods are in the line of fire;
+ * hunters arrive anywhere at minDistance from the player, facing them.
  */
-export class PirateSpawner extends Entity {
-	private readonly options: SpawnerOptions;
+export class EnemySpawner extends Entity {
+	private readonly options: EnemySpawnerOptions;
 	private readonly player: Ship;
-	private readonly pirates: Pirate[] = [];
+	private readonly queue: EnemyKind[];
+	private readonly alive: Ship[] = [];
 	private timer: number;
 
-	constructor(player: Ship, options: Partial<SpawnerOptions> = {}) {
+	constructor(player: Ship, enemies: readonly EnemyKind[], options: Partial<EnemySpawnerOptions> = {}) {
 		super();
 		this.player = player;
-		this.options = { ...DEFAULTS, ...options };
+		this.queue = [...enemies];
+		this.options = { ...ENEMY_DEFAULTS, ...options };
 		this.timer = this.options.firstDelay;
 	}
 
+	/** Enemies not yet sent in plus those still present */
+	get remaining(): number {
+		return this.queue.length + this.alive.filter(enemy => !enemy.dead).length;
+	}
+
 	override update(dt: number, world: World): void {
-		for (let i = this.pirates.length - 1; i >= 0; i--) {
-			if (this.pirates[i].dead) { this.pirates.splice(i, 1); }
+		for (let i = this.alive.length - 1; i >= 0; i--) {
+			if (this.alive[i].dead) { this.alive.splice(i, 1); }
 		}
 
-		if (this.pirates.length >= this.options.max) { return; }
+		if (!this.queue.length || this.alive.length >= this.options.max) { return; }
 
 		this.timer -= dt;
 		if (this.timer > 0) { return; }
 		this.timer = this.options.interval;
 
-		const pirate = new Pirate(this.player);
+		const kind = this.queue.shift()!;
+		const enemy = (kind == "pirate" ? new Pirate(this.player) : new Hunter(this.player));
 		const pods = world.scene.filter((entity): entity is Pod => entity instanceof Pod && !entity.dead && !entity.carrier);
-		const lookAt = this.place(pirate.position, pods);
+		const lookAt = (kind == "pirate" ? this.placeBehindPods(enemy.position, pods) : this.placeAroundPlayer(enemy.position));
+		face(enemy, lookAt);
 
-		const heading = vec3.subtract(vec3.create(), lookAt, pirate.position);
-		if (vec3.length(heading) > 1) {
-			quat.rotationTo(pirate.orientation, vec3.fromValues(0, 0, -1), vec3.normalize(heading, heading));
-		}
-
-		this.pirates.push(pirate);
-		world.spawn(pirate);
+		this.alive.push(enemy);
+		world.spawn(enemy);
 	}
 
-	/**
-	 * Set the spawn position
-	 * @returns Point the pirate should face
-	 */
-	private place(position: vec3, pods: readonly Pod[]): vec3 {
+	/** @returns Point to face */
+	private placeAroundPlayer(position: vec3): vec3 {
+		const player = this.player.position;
+		vec3.scaleAndAdd(position, player, randomHorizontal(), this.options.minDistance);
+		position[1] += (Math.random() - 0.5) * 10;
+		return vec3.clone(player);
+	}
+
+	/** @returns Point to face: the center of the pod field */
+	private placeBehindPods(position: vec3, pods: readonly Pod[]): vec3 {
+		if (!pods.length) { return this.placeAroundPlayer(position); }
+
 		const { minDistance, behind, spread } = this.options;
 		const player = this.player.position;
-		const height = (Math.random() - 0.5) * 10;
-
-		if (!pods.length) {
-			const direction = randomHorizontal();
-			vec3.scaleAndAdd(position, player, direction, minDistance);
-			position[1] += height;
-			return vec3.clone(player);
-		}
 
 		/* pod field: center and horizontal radius */
 		const center = vec3.create();
@@ -106,12 +113,72 @@ export class PirateSpawner extends Entity {
 			distance += shortBy;
 		}
 
-		position[1] = center[1] + height;
+		position[1] = center[1] + (Math.random() - 0.5) * 10;
 		return center;
+	}
+}
+
+export interface PowerupSpawnerOptions {
+	/** Between powerups, counted while below max (s) */
+	interval: number;
+	/** Most powerups waiting to be collected at once */
+	max: number;
+	/** Horizontal distance from the center of the pods within which powerups appear (m) */
+	radius: number;
+}
+
+const POWERUP_KINDS: readonly PowerupKind[] = ["shields", "rapid", "boost"];
+
+/** Invisible scene member that places random powerups around the pod field */
+export class PowerupSpawner extends Entity {
+	private readonly options: PowerupSpawnerOptions;
+	private readonly player: Ship;
+	private readonly waiting: Powerup[] = [];
+	private timer: number;
+
+	constructor(player: Ship, options: Partial<PowerupSpawnerOptions> = {}) {
+		super();
+		this.player = player;
+		this.options = { interval: 20, max: 2, radius: 50, ...options };
+		this.timer = this.options.interval;
+	}
+
+	override update(dt: number, world: World): void {
+		for (let i = this.waiting.length - 1; i >= 0; i--) {
+			if (this.waiting[i].dead) { this.waiting.splice(i, 1); }
+		}
+
+		if (this.waiting.length >= this.options.max) { return; }
+
+		this.timer -= dt;
+		if (this.timer > 0) { return; }
+		this.timer = this.options.interval;
+
+		const kind = POWERUP_KINDS[Math.floor(Math.random() * POWERUP_KINDS.length)];
+		const powerup = new Powerup(kind, this.player);
+
+		const pods = world.scene.filter(entity => entity instanceof Pod && !entity.dead);
+		const center = vec3.create();
+		for (const pod of pods) { vec3.add(center, center, pod.position); }
+		if (pods.length) { vec3.scale(center, center, 1 / pods.length); }
+
+		const distance = this.options.radius * Math.sqrt(Math.random()); /* uniform over the disc */
+		vec3.scaleAndAdd(powerup.position, center, randomHorizontal(), distance);
+		powerup.position[1] = center[1] + (Math.random() - 0.5) * 10;
+
+		this.waiting.push(powerup);
+		world.spawn(powerup);
 	}
 }
 
 function randomHorizontal(): vec3 {
 	const angle = 2 * Math.PI * Math.random();
 	return vec3.fromValues(Math.cos(angle), 0, Math.sin(angle));
+}
+
+function face(entity: Entity, point: vec3): void {
+	const heading = vec3.subtract(vec3.create(), point, entity.position);
+	if (vec3.length(heading) > 1) {
+		quat.rotationTo(entity.orientation, vec3.fromValues(0, 0, -1), vec3.normalize(heading, heading));
+	}
 }

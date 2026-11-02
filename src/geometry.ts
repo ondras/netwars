@@ -1,5 +1,5 @@
 import { vec3 } from "gl-matrix";
-import type { Color } from "./color.ts";
+import { Color } from "./color.ts";
 
 export type Texture = HTMLCanvasElement | HTMLImageElement;
 
@@ -53,6 +53,29 @@ export function billboard(center: vec3, radius: number, getTexture: () => Textur
 export function circle(center: vec3, radius: number, color: Color): Billboard {
 	const key = color.toString();
 	return billboard(center, radius, () => circleTexture(key));
+}
+
+/** Faces are wound counter-clockwise when seen from outside (they survive back-face culling) and shaded by direction */
+export function box(halfSize: number, color: Color): Quad[] {
+	/* face normal, then two edge directions u, v with u × v = normal */
+	const faces: Array<[[number, number, number], [number, number, number], [number, number, number], number]> = [
+		[[0, 1, 0], [0, 0, 1], [1, 0, 0], 1.0],
+		[[1, 0, 0], [0, 1, 0], [0, 0, 1], 0.8],
+		[[0, 0, 1], [1, 0, 0], [0, 1, 0], 0.7],
+		[[-1, 0, 0], [0, 0, 1], [0, 1, 0], 0.8],
+		[[0, 0, -1], [0, 1, 0], [1, 0, 0], 0.7],
+		[[0, -1, 0], [1, 0, 0], [0, 0, 1], 0.5],
+	];
+
+	return faces.map(([normal, u, v, shade]) => {
+		const corner = (su: number, sv: number) => vec3.fromValues(
+			(normal[0] + su * u[0] + sv * v[0]) * halfSize,
+			(normal[1] + su * u[1] + sv * v[1]) * halfSize,
+			(normal[2] + su * u[2] + sv * v[2]) * halfSize,
+		);
+		const [r, g, b] = color.rgb;
+		return quad(corner(-1, -1), corner(1, -1), corner(1, 1), corner(-1, 1), new Color(r * shade, g * shade, b * shade));
+	});
 }
 
 /** Deep copy of the points; color and texture are shared */

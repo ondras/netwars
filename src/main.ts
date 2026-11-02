@@ -1,51 +1,51 @@
-import { Camera } from "./camera.ts";
-import { DIFFICULTIES, difficultyLevel, isDifficultyLevel, setDifficulty } from "./difficulty.ts";
-import { explode } from "./entity/debris.ts";
-import { Pod } from "./entity/pod.ts";
-import { Ship } from "./entity/ship.ts";
-import { PirateSpawner } from "./entity/spawner.ts";
-import { Loop } from "./loop.ts";
-import { PlayerPilot } from "./pilot.ts";
-import { HUD } from "./render/hud.ts";
-import { WebGLRenderer } from "./render/webgl.ts";
+import { Game, type LevelResult } from "./game.ts";
+import { LEVELS } from "./levels.ts";
+import { Menu, type ResultAction } from "./menu.ts";
 
-const container = document.querySelector<HTMLElement>("#game")!;
-const loop = new Loop().start();
-const camera = new Camera();
+const game = new Game(document.querySelector<HTMLElement>("#game")!);
+const menu = new Menu(LEVELS);
 
-const ship = new Ship().fromNSH("missile");
-ship.visible = false; /* cockpit view */
-loop.scene.push(ship);
-ship.setPilot(new PlayerPilot(container));
-camera.follow(ship);
-
-for (let i = 0; i < 20; i++) {
-	const pod = new Pod();
-	pod.position[0] = (Math.random() - 0.5) * 50;
-	pod.position[2] = (Math.random() - 0.5) * 50;
-	pod.position[1] = (Math.random() - 0.5) * 5;
-
-	loop.scene.push(pod);
+function play(level: number): void {
+	menu.hideResult();
+	document.body.classList.add("playing");
+	game.start(level);
 }
 
-loop.scene.push(new PirateSpawner(ship));
+function backToMenu(level: number): void {
+	game.stop();
+	document.body.classList.remove("playing");
+	menu.show(level);
+}
 
-const scene = new WebGLRenderer(camera);
-const hud = new HUD(camera, ship);
-hud.node.className = "hud";
-container.append(scene.node, hud.node);
-loop.renderers.push(scene, hud);
+menu.onStart = play;
 
-const select = document.querySelector<HTMLSelectElement>("#difficulty")!;
-for (const [value, { label }] of Object.entries(DIFFICULTIES)) { select.append(new Option(label, value)); }
-select.value = difficultyLevel();
-select.onchange = () => {
-	if (isDifficultyLevel(select.value)) { setDifficulty(select.value); }
-	select.blur(); /* give the keyboard back to the game */
-};
+game.onOutcome = ({ level, outcome, podsLeft, podsTotal }: LevelResult) => {
+	document.body.classList.remove("playing"); /* show the cursor for the buttons */
+	const toMenu: ResultAction = { label: "Menu", action: () => backToMenu(level) };
 
-document.querySelector<HTMLButtonElement>("#explode")!.onclick = () => {
-	for (const entity of loop.scene) {
-		if (entity.hittable) { explode(entity, loop); } /* not the pirate spawner */
+	switch (outcome) {
+		case "won": {
+			const next = level + 1;
+			const proceed: ResultAction = (next < LEVELS.length
+				? { label: "Next level", action: () => play(next) }
+				: { label: "Play again", action: () => play(0) });
+			const last = (next < LEVELS.length ? "" : " That was the last level.");
+			menu.showResult(`Level ${level + 1} complete`, `Pods saved: ${podsLeft} of ${podsTotal}.${last}`, [proceed, toMenu]);
+		} break;
+
+		case "ship-destroyed":
+			menu.showResult("Ship destroyed", `Level ${level + 1}: ${LEVELS[level].name}`, [{ label: "Retry", action: () => play(level) }, toMenu]);
+		break;
+
+		case "pods-lost":
+			menu.showResult("All pods lost", `Level ${level + 1}: ${LEVELS[level].name}`, [{ label: "Retry", action: () => play(level) }, toMenu]);
+		break;
 	}
 };
+
+window.addEventListener("keydown", e => {
+	if (e.key == "Escape" && game.level !== null) { backToMenu(game.level); }
+	if (e.key == "Enter" && menu.visible && !(document.activeElement instanceof HTMLButtonElement)) { menu.start(); }
+});
+
+menu.show(0);

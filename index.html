@@ -15,6 +15,9 @@
 			#game {
 				position: fixed;
 				inset: 0;
+			}
+
+			body.playing #game {
 				cursor: none; /* the HUD stick marker shows the mouse position */
 			}
 
@@ -30,24 +33,97 @@
 				pointer-events: none;
 			}
 
-			#controls {
+			.panel {
 				position: fixed;
-				top: 12px;
-				right: 12px;
+				left: 50%;
+				top: 50%;
+				transform: translate(-50%, -50%);
+				box-sizing: border-box;
+				width: 380px;
+				max-width: calc(100vw - 32px);
+				padding: 24px 28px;
+				background: rgba(0, 0, 0, 0.8);
+				border: 1px solid rgba(110, 255, 140, 0.5);
+				color: rgba(110, 255, 140, 0.9);
+				font: 14px ui-monospace, monospace;
+				text-align: center;
+			}
+
+			.panel[hidden] {
+				display: none;
+			}
+
+			.panel h1 {
+				margin: 0 0 20px;
+				font-size: 32px;
+				letter-spacing: 0.2em;
+			}
+
+			.panel h2 {
+				margin: 0 0 12px;
+				font-size: 22px;
+			}
+
+			.panel .row {
 				display: flex;
 				align-items: center;
-				gap: 12px;
-				color: rgba(110, 255, 140, 0.85);
-				font: 12px ui-monospace, monospace;
+				justify-content: space-between;
+				gap: 16px;
+				margin: 10px 0;
+			}
+
+			.panel select,
+			.panel button {
+				font: inherit;
+			}
+
+			.panel button {
+				margin: 16px 6px 0;
+				padding: 6px 18px;
+				background: transparent;
+				color: inherit;
+				border: 1px solid currentColor;
+				cursor: pointer;
+			}
+
+			.panel button:hover,
+			.panel button:focus-visible {
+				background: rgba(110, 255, 140, 0.15);
+			}
+
+			#level-description {
+				min-height: 2.6em;
+				margin: 4px 0 12px;
+				font-size: 12px;
+				text-align: left;
+				opacity: 0.85;
+			}
+
+			.panel .help {
+				margin: 18px 0 0;
+				font-size: 12px;
+				opacity: 0.7;
 			}
 		</style>
 	</head>
 	<body>
 		<div id="game"></div>
-		<div id="controls">
-			<label>Difficulty <select id="difficulty"></select></label>
-			<button id="explode">EXPLODE THEM ALL</button>
+
+		<div id="menu" class="panel">
+			<h1>NETWARS</h1>
+			<div class="row"><label for="level">Level</label><select id="level"></select></div>
+			<p id="level-description"></p>
+			<div class="row"><label for="difficulty">Difficulty</label><select id="difficulty"></select></div>
+			<button id="start">Start</button>
+			<p class="help">Mouse: steer · Button: fire<br>W / S: speed up / down · Esc: menu</p>
 		</div>
+
+		<div id="result" class="panel" hidden>
+			<h2 id="result-title"></h2>
+			<p id="result-text"></p>
+			<div id="result-actions"></div>
+		</div>
+
 		<script type="module" src="/src/main.ts"></script>
 	</body>
 </html>

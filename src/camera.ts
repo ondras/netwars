@@ -40,9 +40,13 @@ export class Camera {
 		return this;
 	}
 
-	/** @param offset Camera position in the entity's local space */
-	follow(entity: Entity, offset?: vec3): void {
+	/**
+	 * @param entity null: stop following and look from the origin along -Z
+	 * @param offset Camera position in the entity's local space
+	 */
+	follow(entity: Entity | null, offset?: vec3): void {
 		this.followed = entity;
+		if (!entity) { mat4.identity(this.vMatrix); }
 		if (offset) {
 			vec3.scale(this.followOffset, offset, -1);
 		} else {

@@ -16,6 +16,8 @@ export interface WeaponOptions {
 	 * Shots fly parallel to the forward axis, so an offset below it keeps them from covering the aim point.
 	 */
 	muzzle: readonly [number, number, number];
+	/** Shot color, 0xRRGGBB */
+	color: number;
 }
 
 const DEFAULTS: WeaponOptions = {
@@ -24,6 +26,7 @@ const DEFAULTS: WeaponOptions = {
 	lifetime: 1.5,
 	damage: 25,
 	muzzle: [0, -0.3, -3],
+	color: 0xffffff,
 };
 
 export class Weapon {
@@ -53,6 +56,7 @@ export class Weapon {
 		const position = vec3.add(vec3.create(), owner.position, offset);
 		const velocity = vec3.scaleAndAdd(vec3.create(), owner.velocity, direction, muzzleSpeed);
 
-		return new Shot(position, velocity, owner, this.options.lifetime, this.options.damage);
+		const { lifetime, damage, color } = this.options;
+		return new Shot(position, velocity, owner, lifetime, damage, color);
 	}
 }

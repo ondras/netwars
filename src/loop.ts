@@ -14,6 +14,8 @@ export interface LoopOptions {
 export class Loop implements World {
 	readonly scene: Entity[] = [];
 	readonly renderers: Renderer[] = [];
+	/** Called after every simulation step */
+	onStep: (() => void) | null = null;
 
 	private readonly options: LoopOptions;
 	private readonly spawned: Entity[] = [];
@@ -41,6 +43,15 @@ export class Loop implements World {
 
 	spawn(...entities: Entity[]): void {
 		this.spawned.push(...entities);
+	}
+
+	/** Remove everything from the scene, releasing renderer resources */
+	clear(): void {
+		for (const entity of this.scene) {
+			for (const renderer of this.renderers) { renderer.deletePrivateData?.(entity); }
+		}
+		this.scene.length = 0;
+		this.spawned.length = 0;
 	}
 
 	/**
@@ -81,6 +92,8 @@ export class Loop implements World {
 
 		scene.push(...this.spawned);
 		this.spawned.length = 0;
+
+		this.onStep?.();
 	}
 
 	private readonly tick = (time: DOMHighResTimeStamp): void => {

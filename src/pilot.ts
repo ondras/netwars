@@ -50,6 +50,12 @@ export class KeyRepeat {
 		this.held.clear();
 	}
 
+	/** Forget held keys and steps not yet collected */
+	reset(): void {
+		this.held.clear();
+		this.pending = 0;
+	}
+
 	/** @returns Net steps (positive = up) since the previous call */
 	update(dt: number): number {
 		for (const [direction, time] of this.held) {
@@ -83,10 +89,17 @@ export class PlayerPilot implements Pilot, EventListenerObject {
 		window.addEventListener("blur", this);
 	}
 
+	/** Drop input collected outside play (e.g. keys pressed in the menu) */
+	reset(): void {
+		this.throttle.reset();
+		this.firing = false;
+	}
+
 	update(dt: number, ship: Ship): void {
 		const { speed, yaw, pitch } = ship.engine;
 		const target = speed.target + this.throttle.update(dt) * SPEED_STEP;
-		speed.target = Math.min(speed.limit, Math.max(-speed.limit, target));
+		const limit = ship.topSpeed;
+		speed.target = Math.min(limit, Math.max(-limit, target));
 
 		yaw.control = this.yaw;
 		pitch.control = this.pitch;

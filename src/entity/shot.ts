@@ -19,7 +19,7 @@ export class Shot extends Entity {
 	/** Remaining life span (s) */
 	private time: number;
 
-	constructor(position: vec3, velocity: vec3, owner: Entity | null, lifetime: number, damage: number) {
+	constructor(position: vec3, velocity: vec3, owner: Entity | null, lifetime: number, damage: number, color = 0xffffff) {
 		super();
 
 		vec3.copy(this.position, position);
@@ -29,7 +29,7 @@ export class Shot extends Entity {
 		this.time = lifetime;
 		this.damage = damage;
 
-		this.geometries = [circle(vec3.create(), RADIUS, new Color(0xffffff))];
+		this.geometries = [circle(vec3.create(), RADIUS, new Color(color))];
 	}
 
 	override update(dt: number, world: World): void {

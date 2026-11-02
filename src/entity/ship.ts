@@ -7,6 +7,17 @@ import { Entity } from "./entity.ts";
 /** Control deflection per radian of heading error in steerTowards() */
 const STEER_GAIN = 2;
 
+/** Weapon reload speed-up while the rapid fire effect lasts */
+export const RAPID_FIRE_FACTOR = 2;
+/** Top speed multiplier while the boost effect lasts */
+export const BOOST_FACTOR = 1.5;
+
+/** Remaining time of timed effects (s); 0 when inactive */
+export interface Effects {
+	rapid: number;
+	boost: number;
+}
+
 interface Throttle {
 	/** Current speed (m/s); negative is reverse */
 	value: number;
@@ -48,9 +59,13 @@ export class Ship extends Entity {
 
 	/** Fire whenever the weapon is ready */
 	trigger = false;
+	/** If set, shots fired can only hit this entity */
+	shotTarget: Entity | null = null;
+
+	readonly effects: Effects = { rapid: 0, boost: 0 };
 
 	private pilot: Pilot | null = null;
-	private readonly weapon = new Weapon();
+	protected weapon = new Weapon();
 
 	constructor() {
 		super();
@@ -60,6 +75,11 @@ export class Ship extends Entity {
 	setPilot(pilot: Pilot): this {
 		this.pilot = pilot;
 		return this;
+	}
+
+	/** Speed limit including the boost effect (m/s), forward and reverse */
+	get topSpeed(): number {
+		return this.engine.speed.limit * (this.effects.boost > 0 ? BOOST_FACTOR : 1);
 	}
 
 	/**
@@ -89,10 +109,17 @@ export class Ship extends Entity {
 	override update(dt: number, world: World): void {
 		this.pilot?.update(dt, this, world);
 
-		this.weapon.update(dt);
+		const { effects } = this;
+		effects.rapid = Math.max(0, effects.rapid - dt);
+		effects.boost = Math.max(0, effects.boost - dt);
+
+		this.weapon.update(dt * (effects.rapid > 0 ? RAPID_FIRE_FACTOR : 1));
 		if (this.trigger) {
 			const shot = this.weapon.fire(this);
-			if (shot) { world.spawn(shot); }
+			if (shot) {
+				shot.target = this.shotTarget;
+				world.spawn(shot);
+			}
 		}
 
 		const { yaw, pitch } = this.engine;
@@ -106,7 +133,8 @@ export class Ship extends Entity {
 	private updateSpeed(dt: number): void {
 		const speed = this.engine.speed;
 
-		const target = Math.min(speed.limit, Math.max(-speed.limit, speed.target));
+		const limit = this.topSpeed;
+		const target = Math.min(limit, Math.max(-limit, speed.target));
 		const maxChange = speed.changeRate * dt;
 		speed.value += Math.max(-maxChange, Math.min(maxChange, target - speed.value));
 

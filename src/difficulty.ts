@@ -7,12 +7,14 @@ export interface Difficulty {
 	readonly missileTurnRate: number;
 	/** Time between a pirate's missiles, random within the range (s) */
 	readonly missileInterval: readonly [number, number];
+	/** Shield points a hunter's shot takes */
+	readonly hunterDamage: number;
 }
 
 export const DIFFICULTIES = {
-	easy: { label: "Easy", missileDamage: 10, missileTurnRate: 1.6, missileInterval: [6, 10] },
-	normal: { label: "Normal", missileDamage: 15, missileTurnRate: 2, missileInterval: [4, 8] },
-	hard: { label: "Hard", missileDamage: 25, missileTurnRate: 2.5, missileInterval: [3, 6] },
+	easy: { label: "Easy", missileDamage: 10, missileTurnRate: 1.6, missileInterval: [6, 10], hunterDamage: 3 },
+	normal: { label: "Normal", missileDamage: 15, missileTurnRate: 2, missileInterval: [4, 8], hunterDamage: 5 },
+	hard: { label: "Hard", missileDamage: 25, missileTurnRate: 2.5, missileInterval: [3, 6], hunterDamage: 8 },
 } as const satisfies Record<string, Difficulty>;
 
 export type DifficultyLevel = keyof typeof DIFFICULTIES;
