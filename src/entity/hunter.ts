@@ -1,13 +1,13 @@
 import { vec3 } from "gl-matrix";
 import { difficulty } from "../difficulty.ts";
+import type { Geometry } from "../geometry.ts";
 import { Weapon } from "../weapon.ts";
 import type { World } from "../world.ts";
+import { hunterShape } from "./shapes.ts";
 import { Ship } from "./ship.ts";
 
 export interface HunterOptions {
-	model: string;
-	/** Model size multiplier */
-	scale: number;
+	shape: () => Geometry[];
 	shields: number;
 	/** Top speed (m/s) */
 	speed: number;
@@ -24,7 +24,7 @@ export interface HunterOptions {
 }
 
 export const HUNTER: HunterOptions = {
-	model: "internal/fighter1", scale: 1, shields: 75, speed: 13, acceleration: 10, turnRate: 2.2, reload: 0.35, damageFactor: 1, muzzle: [0, 0, -1.5],
+	shape: hunterShape, shields: 75, speed: 13, acceleration: 10, turnRate: 2.2, reload: 0.35, damageFactor: 1, muzzle: [0, 0, -1.5],
 };
 
 /** Fires only at a player this close (m) … */
@@ -49,8 +49,7 @@ export class Hunter extends Ship {
 	constructor(player: Ship, options: HunterOptions = HUNTER) {
 		super();
 		this.player = player;
-		this.fromNSH(options.model);
-		vec3.set(this.scale, options.scale, options.scale, options.scale);
+		this.geometries = options.shape();
 
 		this.shields.value = this.shields.max = options.shields;
 		Object.assign(this.engine.speed, { limit: options.speed, changeRate: options.acceleration });

@@ -1,13 +1,15 @@
 import { quat, vec3 } from "gl-matrix";
 import { difficulty } from "../difficulty.ts";
+import type { Geometry } from "../geometry.ts";
 import type { World } from "../world.ts";
 import { Grapple } from "./grapple.ts";
 import { Missile } from "./missile.ts";
 import { Pod } from "./pod.ts";
+import { pirateShape } from "./shapes.ts";
 import { Ship } from "./ship.ts";
 
 export interface PirateOptions {
-	model: string;
+	shape: () => Geometry[];
 	shields: number;
 	/** Top speed (m/s) */
 	speed: number;
@@ -19,14 +21,14 @@ export interface PirateOptions {
 	missiles: boolean;
 }
 
-export const PIRATE: PirateOptions = { model: "internal/drone1", shields: 50, speed: 10, acceleration: 8, turnRate: 1.5, missiles: true };
+export const PIRATE: PirateOptions = { shape: pirateShape, shields: 50, speed: 10, acceleration: 8, turnRate: 1.5, missiles: true };
 
 /** Gap between bounding spheres at which a pod can be grabbed (m) */
 const GRAB_GAP = 1.5;
 /** Where a held pod's center is, in the pirate's local frame (m): just below the hull, so the two are hard to hit separately */
 const CARGO_OFFSET = vec3.fromValues(0, -1.4, 0.3);
-/** Where the grapple leaves the hull, local (m) */
-const GRAPPLE_MOUNT = vec3.fromValues(0, -0.3, 0.3);
+/** Where the grapple leaves the hull, local (m): the underside of the flat hull */
+const GRAPPLE_MOUNT = vec3.fromValues(0, -0.03, 0.3);
 /** Time to pull a grabbed pod in (s) */
 const REEL_TIME = 0.6;
 /** Distance from the origin at which a pirate with a pod has escaped (m); beyond the radar range when near the pods */
@@ -65,7 +67,7 @@ export class Pirate extends Ship {
 		super();
 		this.player = player;
 		this.missiles = options.missiles;
-		this.fromNSH(options.model);
+		this.geometries = options.shape();
 
 		this.shields.value = this.shields.max = options.shields;
 		Object.assign(this.engine.speed, { limit: options.speed, changeRate: options.acceleration });

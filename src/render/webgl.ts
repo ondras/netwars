@@ -17,10 +17,27 @@ interface Program<A extends string, U extends string> {
 	uniforms: Record<U, WebGLUniformLocation | null>;
 }
 
-type SimpleProgram = Program<"aPosition" | "aColor", "uPmatrix" | "uMVmatrix">;
+type SimpleProgram = Program<"aPosition" | "aColor", "uPmatrix" | "uMVmatrix" | "uOffset">;
 type BillboardProgram = Program<"aPosition" | "aRadius", "uPmatrix" | "uMVmatrix" | "uTexture" | "uViewport">;
 type StarProgram = Program<"aPosition" | "aBrightness", "uPmatrix" | "uVmatrix" | "uSize">;
 type AnyProgram = SimpleProgram | BillboardProgram | StarProgram;
+
+/** Width of lines (edges, sticks, grapples) in CSS pixels; picked on the ship designs page */
+const LINE_WIDTH = 0.75;
+
+/**
+ * Screen shifts (device pixels) that, drawn over one another, turn 1 px lines into lines about `width` px wide:
+ * WebGL draws lines one pixel wide whatever lineWidth says
+ */
+export function lineOffsets(width: number): Array<[number, number]> {
+	const radius = (width - 1) / 2;
+	const offsets: Array<[number, number]> = [[0, 0]];
+	if (radius <= 0) { return offsets; }
+	for (const r of (radius > 1 ? [radius / 2, radius] : [radius])) {
+		for (let k = 0; k < 8; k++) { offsets.push([r * Math.cos(k * Math.PI / 4), r * Math.sin(k * Math.PI / 4)]); }
+	}
+	return offsets;
+}
 
 const STAR_COUNT = 800;
 /** CSS pixels */
@@ -67,6 +84,8 @@ export class WebGLRenderer implements Renderer {
 	private readonly staleProjection = new Set<AnyProgram>();
 	private readonly entityData = new WeakMap<Entity, EntityData>();
 	private readonly stars: Stars;
+	/** Line passes in clip units, for the current canvas size and pixel ratio */
+	private lineShifts: Array<[number, number]> = [[0, 0]];
 
 	constructor(camera: Camera, background = new Color(0)) {
 		this.camera = camera;
@@ -76,7 +95,7 @@ export class WebGLRenderer implements Renderer {
 		this.gl = gl;
 
 		this.programs = {
-			simple: this.createProgram(simpleVert, simpleFrag, ["aPosition", "aColor"], ["uPmatrix", "uMVmatrix"]),
+			simple: this.createProgram(simpleVert, simpleFrag, ["aPosition", "aColor"], ["uPmatrix", "uMVmatrix", "uOffset"]),
 			billboard: this.createProgram(
 				billboardVert, billboardFrag,
 				["aPosition", "aRadius"],
@@ -89,6 +108,7 @@ export class WebGLRenderer implements Renderer {
 
 		gl.enable(gl.CULL_FACE);
 		gl.enable(gl.DEPTH_TEST);
+		gl.polygonOffset(1, 1); /* faces are drawn a hair behind, so the edge lines on them win */
 
 		const [r, g, b] = background.rgb;
 		gl.clearColor(r, g, b, 1);
@@ -100,6 +120,8 @@ export class WebGLRenderer implements Renderer {
 		if (syncCanvasSize(node)) {
 			gl.viewport(0, 0, node.width, node.height);
 			this.camera.syncPort(node);
+			const width = LINE_WIDTH * (window.devicePixelRatio || 1);
+			this.lineShifts = lineOffsets(width).map(([x, y]) => [2 * x / node.width, 2 * y / node.height]);
 		}
 		this.camera.update();
 		for (const program of Object.values(this.programs)) { this.staleProjection.add(program); }
@@ -219,7 +241,17 @@ export class WebGLRenderer implements Renderer {
 		gl.bindBuffer(gl.ARRAY_BUFFER, set.colors);
 		gl.vertexAttribPointer(a.aColor, 3, gl.FLOAT, false, 0, 0);
 
-		gl.drawArrays(mode, 0, verticesPerPrimitive * set.count);
+		if (mode == gl.LINES) {
+			for (const [x, y] of this.lineShifts) {
+				gl.uniform2f(u.uOffset, x, y);
+				gl.drawArrays(mode, 0, verticesPerPrimitive * set.count);
+			}
+			gl.uniform2f(u.uOffset, 0, 0);
+		} else {
+			gl.enable(gl.POLYGON_OFFSET_FILL);
+			gl.drawArrays(mode, 0, verticesPerPrimitive * set.count);
+			gl.disable(gl.POLYGON_OFFSET_FILL);
+		}
 	}
 
 	/** Upload entity geometries; quads are split into triangles */

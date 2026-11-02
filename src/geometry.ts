@@ -74,12 +74,17 @@ export function facet(points: vec3[], inside: ReadonlyVec3, color: Color): Trian
 	}
 
 	vec3.normalize(normal, normal);
-	const shade = 0.55 + 0.45 * Math.max(0, vec3.dot(normal, LIGHT));
-	const [r, g, bl] = color.rgb;
-	const shaded = new Color(r * shade, g * shade, bl * shade);
+	const shaded = shade(color, normal);
 
 	const [p1, p2, p3, p4] = points;
 	return (p4 ? quad(p1, p2, p3, p4, shaded) : triangle(p1, p2, p3, shaded));
+}
+
+/** The colour of a face pointing along `normal` (unit): lit from above and in front, never darker than about half */
+export function shade(color: Color, normal: ReadonlyVec3): Color {
+	const amount = 0.55 + 0.45 * Math.max(0, vec3.dot(normal, LIGHT));
+	const [r, g, b] = color.rgb;
+	return new Color(r * amount, g * amount, b * amount);
 }
 
 /** Axis-aligned box between two opposite corners */
