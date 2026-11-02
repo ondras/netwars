@@ -18,7 +18,7 @@ import { WebGLRenderer } from "./render/webgl.ts";
 /** Horizontal half-size of the square pods are scattered in (m) */
 const POD_FIELD = 25;
 /** Camera turn rate while no level is running, and after one ends (rad/s) */
-const IDLE_TURN = 0.025;
+const IDLE_TURN = 0.015;
 
 export interface LevelResult {
 	level: number;

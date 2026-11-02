@@ -68,7 +68,7 @@ export const SOUNDS: Record<SoundName, SoundDefinition> = {
 
 	/** Anything is destroyed: ships, pods, missiles shot down */
 	explosion: {
-		level: 1,
+		level: 0.7,
 		variants: 3,
 		params: { wave_type: 3, p_env_sustain: 0.1623, p_env_punch: 0.2539, p_env_decay: 0.4831, p_base_freq: 0.0859, p_freq_ramp: -0.2269, p_vib_strength: 0.5825, p_vib_speed: 0.0014, p_arp_mod: 0.525, p_arp_speed: 0.8461, p_repeat_speed: 0.7211, p_pha_offset: -0.2024, p_pha_ramp: -0.2742 },
 	},
