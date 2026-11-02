@@ -1,12 +1,21 @@
 import { quat, vec3 } from "gl-matrix";
-import type { EnemyKind } from "../levels.ts";
+import { ENEMY_KINDS, type EnemyKind } from "../levels.ts";
 import type { World } from "../world.ts";
 import { Entity } from "./entity.ts";
+import { Gunship } from "./gunship.ts";
 import { Hunter } from "./hunter.ts";
 import { Pirate } from "./pirate.ts";
 import { Pod } from "./pod.ts";
 import { Powerup, type PowerupKind } from "./powerup.ts";
+import { Raider } from "./raider.ts";
 import type { Ship } from "./ship.ts";
+
+const ENEMIES: Record<EnemyKind, (player: Ship) => Ship> = {
+	pirate: player => new Pirate(player),
+	raider: player => new Raider(player),
+	hunter: player => new Hunter(player),
+	gunship: player => new Gunship(player),
+};
 
 /**
  * Where a pirate comes from: beyond the pods as seen by the player (so the pods are in the line of fire),
@@ -80,7 +89,7 @@ export class EnemySpawner extends Entity {
 
 	/** Enemies shot down so far (pirates that got away do not count) */
 	get destroyed(): Record<EnemyKind, number> {
-		const destroyed = { pirate: 0, hunter: 0 };
+		const destroyed = Object.fromEntries(ENEMY_KINDS.map(kind => [kind, 0])) as Record<EnemyKind, number>;
 		for (const { kind, ship } of this.sent) {
 			if (ship.dead && !(ship instanceof Pirate && ship.escaped)) { destroyed[kind]++; }
 		}
@@ -99,9 +108,10 @@ export class EnemySpawner extends Entity {
 		this.timer = this.options.interval;
 
 		const kind = this.queue.shift()!;
-		const enemy = (kind == "pirate" ? new Pirate(this.player) : new Hunter(this.player));
+		const enemy = ENEMIES[kind](this.player);
 		const pods = world.scene.filter((entity): entity is Pod => entity instanceof Pod && !entity.dead && !entity.carrier);
-		const lookAt = (kind == "pirate" ? this.placePirate(enemy.position, pods) : this.placeAroundPlayer(enemy.position));
+		/* pod thieves (pirates, raiders) take one of the approaches; dogfighters (hunters, gunships) come at the player */
+		const lookAt = (enemy instanceof Pirate ? this.placePirate(enemy.position, pods) : this.placeAroundPlayer(enemy.position));
 		face(enemy, lookAt);
 
 		this.sent.push({ kind, ship: enemy });

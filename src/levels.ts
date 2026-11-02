@@ -1,4 +1,5 @@
-export type EnemyKind = "pirate" | "hunter";
+export const ENEMY_KINDS = ["pirate", "raider", "hunter", "gunship"] as const;
+export type EnemyKind = (typeof ENEMY_KINDS)[number];
 
 export interface LevelConfig {
 	readonly name: string;
@@ -49,18 +50,18 @@ export const LEVELS: readonly LevelConfig[] = [
 	},
 	{
 		name: "Swarm",
-		description: "Three pirates at a time, and a hunter now and then.",
+		description: "Three at a time: pirates, fast raiders and the odd hunter.",
 		pods: 16,
-		enemies: ["pirate", "pirate", "pirate", "hunter", "pirate", "pirate", "pirate", "hunter", "pirate", "pirate"],
+		enemies: ["pirate", "raider", "pirate", "hunter", "raider", "pirate", "raider", "hunter", "pirate", "raider"],
 		maxEnemies: 3,
 		enemyInterval: 10,
 		powerups: { interval: 16, max: 2 },
 	},
 	{
 		name: "Crossfire",
-		description: "As many hunters as pirates, three at a time: guard the pods with hunters on your tail.",
+		description: "Hunters and heavy gunships on your tail while pirates and raiders go for the pods, three at a time.",
 		pods: 18,
-		enemies: ["hunter", "pirate", "pirate", "hunter", "pirate", "hunter", "pirate", "hunter", "pirate", "hunter", "pirate", "hunter"],
+		enemies: ["hunter", "pirate", "raider", "hunter", "pirate", "gunship", "raider", "hunter", "pirate", "hunter", "raider", "gunship"],
 		maxEnemies: 3,
 		enemyInterval: 9,
 		powerups: { interval: 15, max: 3 },
@@ -70,8 +71,8 @@ export const LEVELS: readonly LevelConfig[] = [
 		description: "The longest fight, up to four enemies at a time. Make every rocket count.",
 		pods: 20,
 		enemies: [
-			"pirate", "pirate", "hunter", "pirate", "pirate", "hunter", "pirate", "hunter",
-			"pirate", "pirate", "hunter", "pirate", "hunter", "pirate", "hunter", "hunter",
+			"pirate", "raider", "hunter", "pirate", "gunship", "raider", "pirate", "hunter",
+			"raider", "pirate", "gunship", "hunter", "raider", "pirate", "hunter", "gunship",
 		],
 		maxEnemies: 4,
 		enemyInterval: 8,

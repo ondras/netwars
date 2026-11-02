@@ -4,7 +4,7 @@ import type { EnemyKind } from "./levels.ts";
 /** Per pod left when the level is won */
 export const POD_POINTS = 100;
 /** Per enemy destroyed, won or lost */
-export const ENEMY_POINTS: Record<EnemyKind, number> = { pirate: 50, hunter: 100 };
+export const ENEMY_POINTS: Record<EnemyKind, number> = { pirate: 50, raider: 75, hunter: 100, gunship: 200 };
 /** Per shield point left when the level is won */
 export const SHIELD_POINTS = 2;
 export const DIFFICULTY_FACTOR: Record<DifficultyLevel, number> = { easy: 0.5, normal: 1, hard: 1.5 };
@@ -18,7 +18,8 @@ const DEFAULT_NAME = "Pilot";
 export interface Run {
 	won: boolean;
 	podsLeft: number;
-	destroyed: Readonly<Record<EnemyKind, number>>;
+	/** Missing kinds count as none */
+	destroyed: Readonly<Partial<Record<EnemyKind, number>>>;
 	shields: number;
 	difficulty: DifficultyLevel;
 }
@@ -40,7 +41,7 @@ export function score(run: Run): Score {
 
 	if (run.won && run.podsLeft) { lines.push({ label: `${count(run.podsLeft, "pod")} saved`, points: run.podsLeft * POD_POINTS }); }
 	for (const kind of Object.keys(ENEMY_POINTS) as EnemyKind[]) {
-		const destroyed = run.destroyed[kind];
+		const destroyed = run.destroyed[kind] ?? 0;
 		if (destroyed) { lines.push({ label: `${count(destroyed, kind)} destroyed`, points: destroyed * ENEMY_POINTS[kind] }); }
 	}
 	const shields = Math.round(run.shields);

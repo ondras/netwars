@@ -4,7 +4,28 @@ import { Weapon } from "../weapon.ts";
 import type { World } from "../world.ts";
 import { Ship } from "./ship.ts";
 
-const MODEL = "internal/fighter1";
+export interface HunterOptions {
+	model: string;
+	/** Model size multiplier */
+	scale: number;
+	shields: number;
+	/** Top speed (m/s) */
+	speed: number;
+	/** m/s² */
+	acceleration: number;
+	/** rad/s */
+	turnRate: number;
+	/** Time between shots (s) */
+	reload: number;
+	/** Shot damage as a multiple of the difficulty's hunterDamage */
+	damageFactor: number;
+	/** Where shots leave the hull, local (m) */
+	muzzle: [number, number, number];
+}
+
+export const HUNTER: HunterOptions = {
+	model: "internal/fighter1", scale: 1, shields: 75, speed: 13, acceleration: 10, turnRate: 2.2, reload: 0.35, damageFactor: 1, muzzle: [0, 0, -1.5],
+};
 
 /** Fires only at a player this close (m) … */
 export const FIRE_RANGE = 70;
@@ -25,22 +46,23 @@ export class Hunter extends Ship {
 	private modeTime = 0;
 	private readonly evadeTo = vec3.create();
 
-	constructor(player: Ship) {
+	constructor(player: Ship, options: HunterOptions = HUNTER) {
 		super();
 		this.player = player;
-		this.fromNSH(MODEL);
+		this.fromNSH(options.model);
+		vec3.set(this.scale, options.scale, options.scale, options.scale);
 
-		this.shields.value = this.shields.max = 75;
-		Object.assign(this.engine.speed, { limit: 13, changeRate: 10 });
-		this.engine.yaw.changeRate = this.engine.pitch.changeRate = 2.2;
+		this.shields.value = this.shields.max = options.shields;
+		Object.assign(this.engine.speed, { limit: options.speed, changeRate: options.acceleration });
+		this.engine.yaw.changeRate = this.engine.pitch.changeRate = options.turnRate;
 
 		this.shotTarget = player; /* its shots cannot hit pods or other enemies */
 		this.weapon = new Weapon({
-			reload: 0.35,
+			reload: options.reload,
 			muzzleSpeed: 90,
 			lifetime: 1.2,
-			damage: difficulty().hunterDamage,
-			muzzle: [0, 0, -1.5],
+			damage: difficulty().hunterDamage * options.damageFactor,
+			muzzle: options.muzzle,
 			color: 0xff5544,
 		});
 	}

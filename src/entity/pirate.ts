@@ -6,7 +6,20 @@ import { Missile } from "./missile.ts";
 import { Pod } from "./pod.ts";
 import { Ship } from "./ship.ts";
 
-const MODEL = "internal/drone1";
+export interface PirateOptions {
+	model: string;
+	shields: number;
+	/** Top speed (m/s) */
+	speed: number;
+	/** m/s² */
+	acceleration: number;
+	/** rad/s */
+	turnRate: number;
+	/** Fires homing missiles at the player */
+	missiles: boolean;
+}
+
+export const PIRATE: PirateOptions = { model: "internal/drone1", shields: 50, speed: 10, acceleration: 8, turnRate: 1.5, missiles: true };
 
 /** Gap between bounding spheres at which a pod can be grabbed (m) */
 const GRAB_GAP = 1.5;
@@ -38,6 +51,7 @@ export class Pirate extends Ship {
 	escaped = false;
 
 	private readonly player: Ship;
+	private readonly missiles: boolean;
 	private missileCooldown = random(difficulty().missileInterval);
 	private readonly escapeTo = vec3.create();
 
@@ -47,14 +61,15 @@ export class Pirate extends Ship {
 	private readonly grabOffset = vec3.create();
 	private readonly grabOrientation = quat.create();
 
-	constructor(player: Ship) {
+	constructor(player: Ship, options: PirateOptions = PIRATE) {
 		super();
 		this.player = player;
-		this.fromNSH(MODEL);
+		this.missiles = options.missiles;
+		this.fromNSH(options.model);
 
-		this.shields.value = this.shields.max = 50;
-		Object.assign(this.engine.speed, { limit: 10, changeRate: 8 });
-		this.engine.yaw.changeRate = this.engine.pitch.changeRate = 1.5;
+		this.shields.value = this.shields.max = options.shields;
+		Object.assign(this.engine.speed, { limit: options.speed, changeRate: options.acceleration });
+		this.engine.yaw.changeRate = this.engine.pitch.changeRate = options.turnRate;
 	}
 
 	override update(dt: number, world: World): void {
@@ -160,6 +175,7 @@ export class Pirate extends Ship {
 	}
 
 	private fireMissiles(dt: number, world: World): void {
+		if (!this.missiles) { return; }
 		this.missileCooldown = Math.max(0, this.missileCooldown - dt);
 		if (this.missileCooldown > 0 || this.player.dead) { return; }
 		if (vec3.distance(this.position, this.player.position) > MISSILE_RANGE) { return; }

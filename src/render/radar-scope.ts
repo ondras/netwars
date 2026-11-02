@@ -1,6 +1,8 @@
 import { mat4, vec3 } from "gl-matrix";
 import type { Entity } from "../entity/entity.ts";
+import { Gunship } from "../entity/gunship.ts";
 import { Hunter } from "../entity/hunter.ts";
+import { Raider } from "../entity/raider.ts";
 import { Pod } from "../entity/pod.ts";
 import { Powerup } from "../entity/powerup.ts";
 import { Ship } from "../entity/ship.ts";
@@ -11,6 +13,8 @@ export const POD_COLOR = "rgb(90, 150, 255)";
 /** Pirates and other ships */
 export const SHIP_COLOR = "rgb(255, 220, 60)";
 export const HUNTER_COLOR = "rgb(255, 130, 40)";
+export const RAIDER_COLOR = "rgb(80, 235, 200)";
+export const GUNSHIP_COLOR = "rgb(200, 110, 255)";
 export const POWERUP_COLOR = "rgb(200, 200, 200)";
 
 /** Grid cells per side */
@@ -21,6 +25,8 @@ const MAX_STALK = 0.5;
 /** @returns null for entities not shown on the radar */
 function contactColor(entity: Entity): string | null {
 	if (entity instanceof Pod) { return POD_COLOR; }
+	if (entity instanceof Raider) { return RAIDER_COLOR; }
+	if (entity instanceof Gunship) { return GUNSHIP_COLOR; }
 	if (entity instanceof Hunter) { return HUNTER_COLOR; }
 	if (entity instanceof Ship) { return SHIP_COLOR; }
 	if (entity instanceof Powerup) { return POWERUP_COLOR; }

@@ -112,6 +112,6 @@ describe("EnemySpawner.destroyed", () => {
 		away.escaped = true;
 		away.dead = true;
 
-		expect(spawner.destroyed).toEqual({ pirate: 1, hunter: 0 });
+		expect(spawner.destroyed).toEqual({ pirate: 1, raider: 0, hunter: 0, gunship: 0 });
 	});
 });

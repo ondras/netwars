@@ -1,12 +1,14 @@
 import { DIFFICULTIES } from "./difficulty.ts";
-import { FIRE_RANGE } from "./entity/hunter.ts";
-import { MISSILE_RANGE } from "./entity/pirate.ts";
+import { GUNSHIP } from "./entity/gunship.ts";
+import { FIRE_RANGE, HUNTER } from "./entity/hunter.ts";
+import { MISSILE_RANGE, PIRATE } from "./entity/pirate.ts";
+import { RAIDER } from "./entity/raider.ts";
 import {
 	BOOST_GREEN, EFFECT_TIME, RAPID_RED, RAPID_YELLOW, ROCKET_REFILL, ROCKETS_RED, ROCKETS_WHITE, SHIELD_BONUS, SHIELDS_BLUE,
 } from "./entity/powerup.ts";
-import { BOOST_FACTOR, RAPID_FIRE_FACTOR, ROCKET_CAPACITY } from "./entity/ship.ts";
+import { BOOST_FACTOR, RAPID_FIRE_FACTOR, ROCKET, ROCKET_CAPACITY } from "./entity/ship.ts";
 import { LOCK_RANGE, LOCK_TIME } from "./lock.ts";
-import { HUNTER_COLOR, POD_COLOR, POWERUP_COLOR, SHIP_COLOR } from "./render/radar-scope.ts";
+import { GUNSHIP_COLOR, HUNTER_COLOR, POD_COLOR, POWERUP_COLOR, RAIDER_COLOR, SHIP_COLOR } from "./render/radar-scope.ts";
 import { DIFFICULTY_FACTOR, ENEMY_POINTS, POD_POINTS, SHIELD_POINTS } from "./scores.ts";
 
 const hex = (color: number) => `#${color.toString(16).padStart(6, "0")}`;
@@ -53,7 +55,9 @@ export function helpMarkup(): string {
 		<div class="legend">
 			${legend(dot(POD_COLOR), "Pods")}
 			${legend(dot(SHIP_COLOR), "Pirates")}
+			${legend(dot(RAIDER_COLOR), "Raiders")}
 			${legend(dot(HUNTER_COLOR), "Hunters")}
+			${legend(dot(GUNSHIP_COLOR), "Gunships")}
 			${legend(dot(POWERUP_COLOR), "Powerups")}
 		</div>
 
@@ -62,8 +66,12 @@ export function helpMarkup(): string {
 			${item(dot(SHIP_COLOR), "Pirate", `Flies to the nearest pod, grabs it with a grapple and tows it away; once it gets far enough, the pod is lost.
 				Destroy it and the pod drops where it is. Fires homing missiles at you from within ${MISSILE_RANGE} m:
 				a warning sounds, and you can shoot a missile down or out-turn it.`)}
+			${item(dot(RAIDER_COLOR), "Raider", `Steals pods like a pirate, but flies at ${RAIDER.speed} m/s (a pirate does ${PIRATE.speed}) and turns quicker.
+				It has only ${RAIDER.shields} shields and no missiles, so catch it early.`)}
 			${item(dot(HUNTER_COLOR), "Hunter", `Leaves the pods alone and comes after you. Fires when you are ahead of it within ${FIRE_RANGE} m,
 				breaks away when it gets close, then turns back for another pass.`)}
+			${item(dot(GUNSHIP_COLOR), "Gunship", `A big, heavily shielded hunter: ${GUNSHIP.shields} shields against a hunter's ${HUNTER.shields},
+				so it takes ${Math.ceil(GUNSHIP.shields / ROCKET.damage)} rockets. Slow to turn, but its shots hit ${GUNSHIP.damageFactor} times as hard.`)}
 		</div>
 
 		<h3>Powerups</h3>
@@ -82,7 +90,8 @@ export function helpMarkup(): string {
 
 		<h3>Score</h3>
 		<p>When you win: ${POD_POINTS} per pod left and ${SHIELD_POINTS} per shield point left.
-		Win or lose: ${ENEMY_POINTS.pirate} per pirate and ${ENEMY_POINTS.hunter} per hunter destroyed.
+		Win or lose, per enemy destroyed: ${ENEMY_POINTS.pirate} for a pirate, ${ENEMY_POINTS.raider} for a raider,
+		${ENEMY_POINTS.hunter} for a hunter and ${ENEMY_POINTS.gunship} for a gunship.
 		×${DIFFICULTY_FACTOR.easy} on ${easy.label}, ×${DIFFICULTY_FACTOR.hard} on ${hard.label}. Every level keeps its own top ten.</p>
 	`;
 }
