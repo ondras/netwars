@@ -3,23 +3,35 @@ import { Color } from "../color.ts";
 import { cuboid, pyramid, ring, type Geometry } from "../geometry.ts";
 import type { World } from "../world.ts";
 import { Entity } from "./entity.ts";
-import type { Ship } from "./ship.ts";
+import { ROCKET_CAPACITY, type Ship } from "./ship.ts";
 
-export type PowerupKind = "shields" | "rapid" | "boost";
+export type PowerupKind = "shields" | "rapid" | "boost" | "rockets";
 
 /** Shield points restored by a shields powerup */
 export const SHIELD_BONUS = 40;
 /** Duration of the timed powerups (s) */
 export const EFFECT_TIME = 15;
+/** Rockets added by a rockets powerup, up to the capacity */
+export const ROCKET_REFILL = 2;
 
 /*
  * Each kind has its own shape and colours, and none of them looks like the rest of the scene:
  * ship and missile hulls are grey, white and red with touches of blue and green, pods are magenta octahedra.
  */
-const SHIELDS_BLUE = 0x7fd8ff;
-const RAPID_YELLOW = 0xffd426;
-const RAPID_RED = 0xff3326;
-const BOOST_GREEN = 0x55ee55;
+export const SHIELDS_BLUE = 0x7fd8ff;
+export const RAPID_YELLOW = 0xffd426;
+export const RAPID_RED = 0xff3326;
+export const BOOST_GREEN = 0x55ee55;
+export const ROCKETS_WHITE = 0xf2f2f2;
+export const ROCKETS_RED = 0xff3326;
+
+/** White crate with a red band: unlike the white and red ships by being a plain cube */
+function rocketsShape(): Geometry[] {
+	return [
+		...cuboid(vec3.fromValues(-0.36, -0.36, -0.36), vec3.fromValues(0.36, 0.36, 0.36), new Color(ROCKETS_WHITE)),
+		...cuboid(vec3.fromValues(-0.39, -0.1, -0.39), vec3.fromValues(0.39, 0.1, 0.39), new Color(ROCKETS_RED)),
+	];
+}
 
 /** Light blue ring */
 function shieldsShape(): Geometry[] {
@@ -60,6 +72,7 @@ export const POWERUPS: Record<PowerupKind, { readonly label: string; readonly sh
 	shields: { label: "Shields", shape: shieldsShape },
 	rapid: { label: "Rapid fire", shape: rapidShape },
 	boost: { label: "Boost", shape: boostShape },
+	rockets: { label: "Rockets", shape: rocketsShape },
 };
 
 /** Collected within this gap between the bounding spheres (m) */
@@ -96,5 +109,6 @@ export function applyPowerup(kind: PowerupKind, ship: Ship): void {
 		case "shields": ship.shields.value = Math.min(ship.shields.max, ship.shields.value + SHIELD_BONUS); break;
 		case "rapid": ship.effects.rapid = EFFECT_TIME; break;
 		case "boost": ship.effects.boost = EFFECT_TIME; break;
+		case "rockets": ship.rockets = Math.min(ROCKET_CAPACITY, ship.rockets + ROCKET_REFILL); break;
 	}
 }

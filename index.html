@@ -41,6 +41,8 @@
 				box-sizing: border-box;
 				width: 380px;
 				max-width: calc(100vw - 32px);
+				max-height: calc(100vh - 32px);
+				overflow-y: auto;
 				padding: 24px 28px;
 				background: rgba(0, 0, 0, 0.8);
 				border: 1px solid rgba(110, 255, 140, 0.5);
@@ -146,6 +148,175 @@
 				}
 			}
 
+			.panel input {
+				box-sizing: border-box;
+				width: 12em;
+				padding: 4px 8px;
+				font: inherit;
+				color: inherit;
+				background: transparent;
+				border: 1px solid currentColor;
+				border-radius: 0;
+			}
+
+			.panel input:focus-visible {
+				outline: 1px solid currentColor;
+				outline-offset: 2px;
+				background-color: rgba(110, 255, 140, 0.15);
+			}
+
+			.panel h3 {
+				margin: 22px 0 6px;
+				font-size: 12px;
+				font-weight: normal;
+				letter-spacing: 0.12em;
+				text-transform: uppercase;
+				opacity: 0.8;
+			}
+
+			.panel table {
+				width: 100%;
+				border-collapse: collapse;
+				font-size: 12px;
+				font-variant-numeric: tabular-nums;
+			}
+
+			.panel td {
+				padding: 2px 4px;
+				text-align: left;
+				white-space: nowrap;
+			}
+
+			.panel td.number {
+				text-align: right;
+			}
+
+			.board td.name {
+				width: 100%;
+				max-width: 0; /* takes the free width, long names end in an ellipsis */
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+
+			.board tr.current {
+				background: rgba(110, 255, 140, 0.15);
+			}
+
+			.board td.empty {
+				text-align: center;
+				opacity: 0.7;
+			}
+
+			.score {
+				margin-top: 10px;
+			}
+
+			.score tr.total td {
+				padding-top: 4px;
+				border-top: 1px solid rgba(110, 255, 140, 0.5);
+				font-weight: bold;
+			}
+
+			.panel .stack button {
+				display: block;
+				width: 100%;
+				margin: 10px 0 0;
+			}
+
+			.panel .slider {
+				display: flex;
+				align-items: center;
+				gap: 10px;
+			}
+
+			.panel input[type="range"] {
+				width: 9em;
+				padding: 0;
+				border: none;
+				accent-color: rgb(110, 255, 140);
+				cursor: pointer;
+			}
+
+			.panel output {
+				min-width: 4.5ch;
+				text-align: right;
+				font-variant-numeric: tabular-nums;
+			}
+
+			#help-panel {
+				width: 560px;
+				text-align: left;
+			}
+
+			#help-panel:focus {
+				outline: none; /* focused only so the keyboard scrolls it */
+			}
+
+			#help-panel h2,
+			#help-panel .help {
+				text-align: center;
+			}
+
+			#help-panel > button {
+				display: block;
+				margin: 22px auto 0;
+			}
+
+			#help-content {
+				font-size: 12.5px;
+				line-height: 1.5;
+			}
+
+			#help-content p {
+				margin: 0 0 8px;
+			}
+
+			#help-content dl {
+				display: grid;
+				grid-template-columns: max-content 1fr;
+				gap: 4px 14px;
+				margin: 0;
+			}
+
+			#help-content dt {
+				font-weight: bold;
+			}
+
+			#help-content dd {
+				margin: 0;
+			}
+
+			#help-content .items {
+				display: grid;
+				grid-template-columns: 24px 1fr;
+				gap: 10px 12px;
+				align-items: start;
+			}
+
+			#help-content .items svg {
+				display: block;
+			}
+
+			#help-content .legend {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 4px 18px;
+			}
+
+			#help-content .legend span {
+				display: flex;
+				align-items: center;
+			}
+
+			#result-name .rank {
+				margin: 16px 0 8px;
+				font-weight: bold;
+			}
+
+			#result-name button {
+				margin-top: 8px;
+			}
+
 			#level-description {
 				min-height: 2.6em;
 				margin: 4px 0 12px;
@@ -169,14 +340,51 @@
 			<div class="row"><label for="level">Level</label><select id="level"></select></div>
 			<p id="level-description"></p>
 			<div class="row"><label for="difficulty">Difficulty</label><select id="difficulty"></select></div>
-			<button id="start">Start</button>
-			<p class="help">Mouse: steer · Button: fire<br>W / S: speed up / down · Esc: menu</p>
+			<button id="start">Start</button><button id="menu-settings">Settings</button><button id="menu-help">Help</button>
+			<h3 id="menu-board-title">Best scores</h3>
+			<table id="menu-board" class="board"></table>
+			<p class="help">Mouse: steer · Button: fire<br>W / S: speed up / down · Esc: pause<br>Keep an enemy ahead to lock on, then<br>Enter / Space: launch a rocket</p>
 		</div>
 
 		<div id="result" class="panel" hidden>
 			<h2 id="result-title"></h2>
 			<p id="result-text"></p>
+			<table id="result-score" class="score"></table>
+			<form id="result-name" hidden>
+				<p class="rank" id="result-rank"></p>
+				<div class="row"><label for="player-name">Your name</label><input id="player-name" maxlength="16" autocomplete="nickname" spellcheck="false"></div>
+				<button type="submit">Save</button>
+			</form>
+			<h3 id="result-board-title">Best scores</h3>
+			<table id="result-board" class="board"></table>
 			<div id="result-actions"></div>
+		</div>
+
+		<div id="pause" class="panel" hidden>
+			<h2>Paused</h2>
+			<div class="stack">
+				<button id="resume">Resume</button>
+				<button id="pause-settings">Settings</button>
+				<button id="leave">Leave mission</button>
+			</div>
+			<p class="help">Esc: resume</p>
+		</div>
+
+		<div id="settings" class="panel" hidden>
+			<h2>Settings</h2>
+			<div class="row">
+				<label for="effects-volume">Effects volume</label>
+				<span class="slider"><input id="effects-volume" type="range" min="0" max="100" step="5"><output id="effects-volume-value" for="effects-volume"></output></span>
+			</div>
+			<button id="settings-back">Back</button>
+			<p class="help">Esc: back</p>
+		</div>
+
+		<div id="help-panel" class="panel" tabindex="-1" hidden>
+			<h2>How to play</h2>
+			<div id="help-content"></div>
+			<button id="help-back">Back</button>
+			<p class="help">Esc: back</p>
 		</div>
 
 		<script type="module" src="/src/main.ts"></script>

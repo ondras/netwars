@@ -20,6 +20,8 @@ export class Loop implements World {
 	onStep: (() => void) | null = null;
 	/** Called for every sound effect an entity makes */
 	onSound: ((name: SoundName, at?: ReadonlyVec3) => void) | null = null;
+	/** While set, the scene is still drawn but the simulation does not advance */
+	paused = false;
 
 	private readonly options: LoopOptions;
 	private readonly spawned: Entity[] = [];
@@ -108,7 +110,7 @@ export class Loop implements World {
 	private readonly tick = (time: DOMHighResTimeStamp): void => {
 		this.frame = requestAnimationFrame(this.tick);
 
-		if (this.lastTime !== null) { this.advance((time - this.lastTime) / 1000); }
+		if (this.lastTime !== null && !this.paused) { this.advance((time - this.lastTime) / 1000); }
 		this.lastTime = time;
 
 		for (const renderer of this.renderers) { renderer.render(this.scene); }

@@ -22,7 +22,7 @@ export const ESCAPE_RADIUS = 150;
 const HOLD_DISTANCE = 25;
 
 /** Missiles are only fired at a player this close (m); interval, damage and turn rate depend on difficulty() */
-const MISSILE_RANGE = 80;
+export const MISSILE_RANGE = 80;
 
 const random = ([min, max]: readonly [number, number]) => min + (max - min) * Math.random();
 
@@ -34,6 +34,8 @@ export class Pirate extends Ship {
 	/** Pod being carried away */
 	cargo: Pod | null = null;
 	grapple: Grapple | null = null;
+	/** Got away with a pod (it is then dead, but not destroyed) */
+	escaped = false;
 
 	private readonly player: Ship;
 	private missileCooldown = random(difficulty().missileInterval);
@@ -61,6 +63,7 @@ export class Pirate extends Ship {
 		this.holdCargo(dt);
 
 		if (this.cargo && vec3.length(this.position) >= ESCAPE_RADIUS) { /* got away: all disappear */
+			this.escaped = true;
 			this.dead = true;
 			this.cargo.dead = true;
 			if (this.grapple) { this.grapple.dead = true; }

@@ -2,8 +2,8 @@ import { quat, vec3, type ReadonlyQuat, type ReadonlyVec3 } from "gl-matrix";
 import { SOUNDS, type SoundName } from "./sounds.ts";
 import { renderSound, SAMPLE_RATE } from "./synth.ts";
 
-/** Master volume */
-const VOLUME = 0.5;
+/** Master gain at 100 % effects volume */
+const FULL_VOLUME = 0.6;
 /** Sounds within this distance play at full volume (m); farther away, volume falls as 1 / distance */
 const NEAR = 20;
 /** Sounds quieter than this are skipped */
@@ -36,7 +36,8 @@ export function placeSound(listener: Listener | null, at?: ReadonlyVec3): Placem
 
 interface Output {
 	context: AudioContext;
-	destination: AudioNode;
+	/** Every sound goes through this; it sets the volume */
+	destination: GainNode;
 	buffers: Map<SoundName, AudioBuffer[]>;
 }
 
@@ -47,11 +48,20 @@ export class SoundPlayer {
 
 	private readonly samples = new Map<SoundName, Float32Array<ArrayBuffer>[]>();
 	private output: Output | null = null;
+	/** 0..1 */
+	private volume: number;
 
-	constructor() {
+	constructor(volume = 1) {
+		this.volume = volume;
 		for (const [name, definition] of Object.entries(SOUNDS) as [SoundName, (typeof SOUNDS)[SoundName]][]) {
 			this.samples.set(name, Array.from({ length: definition.variants ?? 1 }, () => renderSound(definition)));
 		}
+	}
+
+	/** 0..1 */
+	setVolume(volume: number): void {
+		this.volume = volume;
+		if (this.output) { this.output.destination.gain.value = FULL_VOLUME * volume; }
 	}
 
 	/** Start the audio output; browsers allow that only while handling a click or a key press */
@@ -61,7 +71,7 @@ export class SoundPlayer {
 		if (!this.output) {
 			const context = new AudioContext();
 			const limiter = new DynamicsCompressorNode(context, { threshold: -10, knee: 6, ratio: 8, attack: 0.002, release: 0.15 });
-			const volume = new GainNode(context, { gain: VOLUME });
+			const volume = new GainNode(context, { gain: FULL_VOLUME * this.volume });
 			volume.connect(limiter).connect(context.destination);
 
 			const buffers = new Map<SoundName, AudioBuffer[]>();

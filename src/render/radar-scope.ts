@@ -7,11 +7,11 @@ import { Ship } from "../entity/ship.ts";
 import { radarContact, type RadarContact } from "../radar.ts";
 
 const GRID_COLOR = "rgba(255, 70, 60, 0.85)";
-const POD_COLOR = "rgb(90, 150, 255)";
+export const POD_COLOR = "rgb(90, 150, 255)";
 /** Pirates and other ships */
-const SHIP_COLOR = "rgb(255, 220, 60)";
-const HUNTER_COLOR = "rgb(255, 130, 40)";
-const POWERUP_COLOR = "rgb(200, 200, 200)";
+export const SHIP_COLOR = "rgb(255, 220, 60)";
+export const HUNTER_COLOR = "rgb(255, 130, 40)";
+export const POWERUP_COLOR = "rgb(200, 200, 200)";
 
 /** Grid cells per side */
 const CELLS = 4;

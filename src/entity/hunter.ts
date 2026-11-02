@@ -7,7 +7,7 @@ import { Ship } from "./ship.ts";
 const MODEL = "internal/fighter1";
 
 /** Fires only at a player this close (m) … */
-const FIRE_RANGE = 70;
+export const FIRE_RANGE = 70;
 /** … and this close to straight ahead (rad) */
 const FIRE_CONE = 0.12;
 /** Breaks off the attack when this close to the player (m) … */

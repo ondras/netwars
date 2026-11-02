@@ -61,7 +61,8 @@ export class EnemySpawner extends Entity {
 	private readonly options: EnemySpawnerOptions;
 	private readonly player: Ship;
 	private readonly queue: EnemyKind[];
-	private readonly alive: Ship[] = [];
+	/** Every enemy sent in so far, dead or alive */
+	private readonly sent: Array<{ kind: EnemyKind; ship: Ship }> = [];
 	private timer: number;
 
 	constructor(player: Ship, enemies: readonly EnemyKind[], options: Partial<EnemySpawnerOptions> = {}) {
@@ -74,15 +75,24 @@ export class EnemySpawner extends Entity {
 
 	/** Enemies not yet sent in plus those still present */
 	get remaining(): number {
-		return this.queue.length + this.alive.filter(enemy => !enemy.dead).length;
+		return this.queue.length + this.present;
+	}
+
+	/** Enemies shot down so far (pirates that got away do not count) */
+	get destroyed(): Record<EnemyKind, number> {
+		const destroyed = { pirate: 0, hunter: 0 };
+		for (const { kind, ship } of this.sent) {
+			if (ship.dead && !(ship instanceof Pirate && ship.escaped)) { destroyed[kind]++; }
+		}
+		return destroyed;
+	}
+
+	private get present(): number {
+		return this.sent.filter(({ ship }) => !ship.dead).length;
 	}
 
 	override update(dt: number, world: World): void {
-		for (let i = this.alive.length - 1; i >= 0; i--) {
-			if (this.alive[i].dead) { this.alive.splice(i, 1); }
-		}
-
-		if (!this.queue.length || this.alive.length >= this.options.max) { return; }
+		if (!this.queue.length || this.present >= this.options.max) { return; }
 
 		this.timer -= dt;
 		if (this.timer > 0) { return; }
@@ -94,7 +104,7 @@ export class EnemySpawner extends Entity {
 		const lookAt = (kind == "pirate" ? this.placePirate(enemy.position, pods) : this.placeAroundPlayer(enemy.position));
 		face(enemy, lookAt);
 
-		this.alive.push(enemy);
+		this.sent.push({ kind, ship: enemy });
 		world.spawn(enemy);
 	}
 
@@ -170,7 +180,7 @@ export interface PowerupSpawnerOptions {
 	radius: number;
 }
 
-const POWERUP_KINDS: readonly PowerupKind[] = ["shields", "rapid", "boost"];
+const POWERUP_KINDS: readonly PowerupKind[] = ["shields", "rapid", "boost", "rockets"];
 
 /** Invisible scene member that places random powerups around the pod field */
 export class PowerupSpawner extends Entity {

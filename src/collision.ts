@@ -52,6 +52,7 @@ export function resolveHits(entities: readonly Entity[], world: World): void {
 		for (const target of entities) {
 			if (!target.hittable || target.dead || target == shot.owner || !target.radius) { continue; }
 			if (shot.target && target != shot.target) { continue; }
+			if (target instanceof Shot && target.owner == shot.owner) { continue; } /* never your own rockets */
 
 			const t = segmentSphereEntry(shot.previousPosition, shot.position, target.position, target.radius + shot.radius);
 			if (t !== null && t < hitAt) {

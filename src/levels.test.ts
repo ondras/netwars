@@ -50,6 +50,20 @@ describe("levels", () => {
 		expect(second.enemies).not.toContain("hunter");
 		expect(third.enemies).toContain("hunter");
 	});
+
+	it("get harder after the third: more enemies, more of them at once, sooner", () => {
+		for (let i = 3; i < LEVELS.length; i++) {
+			const [previous, level] = [LEVELS[i - 1], LEVELS[i]];
+			expect(level.enemies.length, level.name).toBeGreaterThan(previous.enemies.length);
+			expect(level.maxEnemies, level.name).toBeGreaterThanOrEqual(previous.maxEnemies);
+			expect(level.enemyInterval, level.name).toBeLessThan(previous.enemyInterval);
+		}
+		expect(LEVELS.length).toBeGreaterThanOrEqual(5);
+	});
+
+	it("have unique names, since best scores are kept by level name", () => {
+		expect(new Set(LEVELS.map(level => level.name)).size).toBe(LEVELS.length);
+	});
 });
 
 describe("EnemySpawner", () => {

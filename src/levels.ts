@@ -47,6 +47,36 @@ export const LEVELS: readonly LevelConfig[] = [
 		enemyInterval: 12,
 		powerups: { interval: 18, max: 2 },
 	},
+	{
+		name: "Swarm",
+		description: "Three pirates at a time, and a hunter now and then.",
+		pods: 16,
+		enemies: ["pirate", "pirate", "pirate", "hunter", "pirate", "pirate", "pirate", "hunter", "pirate", "pirate"],
+		maxEnemies: 3,
+		enemyInterval: 10,
+		powerups: { interval: 16, max: 2 },
+	},
+	{
+		name: "Crossfire",
+		description: "As many hunters as pirates, three at a time: guard the pods with hunters on your tail.",
+		pods: 18,
+		enemies: ["hunter", "pirate", "pirate", "hunter", "pirate", "hunter", "pirate", "hunter", "pirate", "hunter", "pirate", "hunter"],
+		maxEnemies: 3,
+		enemyInterval: 9,
+		powerups: { interval: 15, max: 3 },
+	},
+	{
+		name: "Siege",
+		description: "The longest fight, up to four enemies at a time. Make every rocket count.",
+		pods: 20,
+		enemies: [
+			"pirate", "pirate", "hunter", "pirate", "pirate", "hunter", "pirate", "hunter",
+			"pirate", "pirate", "hunter", "pirate", "hunter", "pirate", "hunter", "hunter",
+		],
+		maxEnemies: 4,
+		enemyInterval: 8,
+		powerups: { interval: 14, max: 3 },
+	},
 ];
 
 export type Outcome = "won" | "ship-destroyed" | "pods-lost";

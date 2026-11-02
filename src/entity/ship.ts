@@ -1,8 +1,10 @@
 import { quat, vec3, type ReadonlyVec3 } from "gl-matrix";
+import type { TargetLock } from "../lock.ts";
 import type { Pilot } from "../pilot.ts";
 import { Weapon } from "../weapon.ts";
 import type { World } from "../world.ts";
 import { Entity } from "./entity.ts";
+import { Missile, type MissileOptions } from "./missile.ts";
 
 /** Control deflection per radian of heading error in steerTowards() */
 const STEER_GAIN = 2;
@@ -18,6 +20,13 @@ export const BUMP_SPEED_KEPT = 0.3;
 export const TUMBLE_TIME = 1;
 /** Spin rate right after a bump (rad/s); it fades to nothing over TUMBLE_TIME, turning the ship about 45° */
 const TUMBLE_SPIN = 1.5;
+
+/** Most rockets a ship carries */
+export const ROCKET_CAPACITY = 3;
+/** The player's homing rockets: faster and more agile than pirate missiles; one destroys a pirate */
+export const ROCKET: MissileOptions = { speed: 35, turnRate: 3, lifetime: 5, damage: 50 };
+/** Where rockets leave the hull, local (m): below the line of sight, like the gun */
+const ROCKET_MOUNT = vec3.fromValues(0, -0.6, -1.5);
 
 /** Remaining time of timed effects (s); 0 when inactive */
 export interface Effects {
@@ -68,6 +77,13 @@ export class Ship extends Entity {
 	trigger = false;
 	/** If set, shots fired can only hit this entity */
 	shotTarget: Entity | null = null;
+
+	/** Homing rockets left */
+	rockets = 0;
+	/** Set by the pilot to launch a rocket at the locked target; handled and cleared on update */
+	launch = false;
+	/** Finds targets for the rockets; only the player's ship has one */
+	targetLock: TargetLock | null = null;
 
 	readonly effects: Effects = { rapid: 0, boost: 0 };
 
@@ -138,6 +154,14 @@ export class Ship extends Entity {
 	override update(dt: number, world: World): void {
 		this.pilot?.update(dt, this, world);
 
+		if (this.targetLock) {
+			if (this.rockets > 0) { this.targetLock.update(dt, this, world.scene); } else { this.targetLock.clear(); }
+		}
+		if (this.launch) {
+			this.launch = false;
+			this.launchRocket(world);
+		}
+
 		const { effects } = this;
 		effects.rapid = Math.max(0, effects.rapid - dt);
 		effects.boost = Math.max(0, effects.boost - dt);
@@ -162,6 +186,19 @@ export class Ship extends Entity {
 		this.updateSpeed(dt);
 
 		super.update(dt, world);
+	}
+
+	/** At the locked target, if there is one and a rocket is left */
+	private launchRocket(world: World): void {
+		const target = (this.targetLock?.locked ? this.targetLock.target : null);
+		if (!target || this.rockets <= 0) { return; }
+
+		this.rockets--;
+		const position = vec3.transformQuat(vec3.create(), ROCKET_MOUNT, this.orientation);
+		vec3.add(position, position, this.position);
+		const forward = vec3.transformQuat(vec3.create(), vec3.fromValues(0, 0, -1), this.orientation);
+		world.spawn(new Missile(position, forward, this, target, ROCKET));
+		world.sound("launch", position);
 	}
 
 	private updateSpeed(dt: number): void {

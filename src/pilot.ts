@@ -15,6 +15,9 @@ const SPEED_KEYS: Record<string, Direction> = {
 	KeyS: -1,
 };
 
+/** Launch a rocket at the locked target */
+const LAUNCH_KEYS = new Set(["Enter", "NumpadEnter", "Space"]);
+
 type Direction = 1 | -1;
 
 /** Hold time before a held key starts repeating (s) */
@@ -69,12 +72,32 @@ export class KeyRepeat {
 	}
 }
 
+/** Hands off: slows down to a stop and turns slowly, like the view behind the main menu */
+export class IdlePilot implements Pilot {
+	/** rad/s */
+	private readonly turnRate: number;
+
+	constructor(turnRate: number) {
+		this.turnRate = turnRate;
+	}
+
+	update(_dt: number, ship: Ship): void {
+		const { speed, yaw, pitch } = ship.engine;
+		speed.target = 0;
+		yaw.control = Math.min(1, this.turnRate / yaw.changeRate);
+		pitch.control = 0;
+		ship.trigger = false;
+	}
+}
+
 /**
  * Mouse position over the given element steers, mouse button fires,
- * W/S change the target speed by SPEED_STEP per press (repeating while held).
+ * W/S change the target speed by SPEED_STEP per press (repeating while held), Enter or Space launches a rocket.
  */
 export class PlayerPilot implements Pilot, EventListenerObject {
 	private firing = false;
+	/** A rocket launch key was pressed since the last update */
+	private launching = false;
 	private yaw = 0;
 	private pitch = 0;
 	private readonly throttle = new KeyRepeat();
@@ -93,6 +116,7 @@ export class PlayerPilot implements Pilot, EventListenerObject {
 	reset(): void {
 		this.throttle.reset();
 		this.firing = false;
+		this.launching = false;
 	}
 
 	update(dt: number, ship: Ship): void {
@@ -104,6 +128,8 @@ export class PlayerPilot implements Pilot, EventListenerObject {
 		yaw.control = this.yaw;
 		pitch.control = this.pitch;
 		ship.trigger = this.firing;
+		if (this.launching) { ship.launch = true; }
+		this.launching = false;
 	}
 
 	handleEvent(e: Event): void {
@@ -127,10 +153,15 @@ export class PlayerPilot implements Pilot, EventListenerObject {
 			break;
 
 			case "keydown": {
+				/* keys for the menu's fields and buttons (typing a name, pressing Enter on a button) are not for flying */
+				if (e.target instanceof Element && e.target.closest("input, textarea, select, button")) { break; }
 				const { code, repeat, metaKey, ctrlKey, altKey } = e as KeyboardEvent;
-				const direction = SPEED_KEYS[code];
 				/* OS key repeat is ignored (KeyRepeat does its own); modifiers mean a browser shortcut */
-				if (direction && !repeat && !metaKey && !ctrlKey && !altKey) { this.throttle.press(direction); }
+				if (repeat || metaKey || ctrlKey || altKey) { break; }
+
+				const direction = SPEED_KEYS[code];
+				if (direction) { this.throttle.press(direction); }
+				if (LAUNCH_KEYS.has(code)) { this.launching = true; }
 			} break;
 
 			case "keyup": {

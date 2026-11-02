@@ -1,18 +1,23 @@
 import { mat4 } from "gl-matrix";
 import { SoundPlayer } from "./audio/player.ts";
 import { Camera } from "./camera.ts";
+import { Hunter } from "./entity/hunter.ts";
+import { Pirate } from "./entity/pirate.ts";
+import { TargetLock } from "./lock.ts";
+import { effectsVolume } from "./settings.ts";
 import { Pod } from "./entity/pod.ts";
-import { Ship } from "./entity/ship.ts";
+import { ROCKET_CAPACITY, Ship } from "./entity/ship.ts";
 import { EnemySpawner, PowerupSpawner } from "./entity/spawner.ts";
-import { LEVELS, levelOutcome, type Outcome } from "./levels.ts";
+import { difficultyLevel, type DifficultyLevel } from "./difficulty.ts";
+import { LEVELS, levelOutcome, type EnemyKind, type Outcome } from "./levels.ts";
 import { Loop } from "./loop.ts";
-import { PlayerPilot } from "./pilot.ts";
+import { IdlePilot, PlayerPilot } from "./pilot.ts";
 import { HUD } from "./render/hud.ts";
 import { WebGLRenderer } from "./render/webgl.ts";
 
 /** Horizontal half-size of the square pods are scattered in (m) */
 const POD_FIELD = 25;
-/** Camera turn rate while no level is running (rad/s) */
+/** Camera turn rate while no level is running, and after one ends (rad/s) */
 const IDLE_TURN = 0.05;
 
 export interface LevelResult {
@@ -20,10 +25,15 @@ export interface LevelResult {
 	outcome: Outcome;
 	podsLeft: number;
 	podsTotal: number;
+	destroyed: Record<EnemyKind, number>;
+	/** Shield points left */
+	shields: number;
+	difficulty: DifficultyLevel;
 }
 
 interface Session {
 	level: number;
+	difficulty: DifficultyLevel;
 	ship: Ship;
 	enemies: EnemySpawner;
 	pods: Pod[];
@@ -38,7 +48,7 @@ export class Game {
 	private readonly loop = new Loop();
 	private readonly camera = new Camera();
 	private readonly hud = new HUD(this.camera);
-	private readonly sounds = new SoundPlayer();
+	private readonly sounds = new SoundPlayer(effectsVolume());
 	private readonly pilot: PlayerPilot;
 	private session: Session | null = null;
 
@@ -60,6 +70,36 @@ export class Game {
 		return this.session?.level ?? null;
 	}
 
+	/** A level is under way: started, not yet won or lost (it may be paused) */
+	get playing(): boolean {
+		return this.session !== null && this.session.outcome === null;
+	}
+
+	get paused(): boolean {
+		return this.loop.paused;
+	}
+
+	/** Freeze the level; the scene stays on screen */
+	pause(): void {
+		if (this.playing) { this.loop.paused = true; }
+	}
+
+	resume(): void {
+		this.pilot.reset(); /* drop clicks and key presses made while paused */
+		this.loop.paused = false;
+	}
+
+	/** 0..1 */
+	setEffectsVolume(volume: number): void {
+		this.sounds.setVolume(volume);
+	}
+
+	/** A cannon shot at the current volume; call from an input handler, so that audio may start */
+	playTestSound(): void {
+		this.sounds.unlock();
+		this.sounds.play("cannon");
+	}
+
 	/** Call from a click or key press handler: that is when browsers let audio start */
 	start(level: number): void {
 		this.stop();
@@ -69,6 +109,8 @@ export class Game {
 		const ship = new Ship().fromNSH("missile");
 		ship.visible = false; /* cockpit view */
 		ship.setPilot(this.pilot);
+		ship.rockets = ROCKET_CAPACITY; /* a full rack every level */
+		ship.targetLock = new TargetLock(entity => entity instanceof Pirate || entity instanceof Hunter);
 		this.pilot.reset();
 
 		const pods = Array.from({ length: config.pods }, () => {
@@ -85,7 +127,7 @@ export class Game {
 		scene.push(ship, ...pods, enemies);
 		if (config.powerups) { scene.push(new PowerupSpawner(ship, config.powerups)); }
 
-		this.session = { level, ship, enemies, pods, outcome: null };
+		this.session = { level, difficulty: difficultyLevel(), ship, enemies, pods, outcome: null };
 		this.camera.follow(ship);
 		this.sounds.listener = ship;
 		this.hud.ship = ship;
@@ -95,6 +137,7 @@ export class Game {
 	/** End the level (if any) and clear the scene */
 	stop(): void {
 		this.loop.clear();
+		this.loop.paused = false;
 		this.session = null;
 		this.camera.follow(null);
 		this.sounds.listener = null;
@@ -123,6 +166,17 @@ export class Game {
 		if (!outcome) { return; }
 
 		session.outcome = outcome;
-		this.onOutcome?.({ level: session.level, outcome, podsLeft, podsTotal: session.pods.length });
+		/* the mouse is for the result panel now: the ship drifts to a stop, turning slowly */
+		session.ship.setPilot(new IdlePilot(IDLE_TURN));
+		session.ship.targetLock = null;
+		this.onOutcome?.({
+			level: session.level,
+			outcome,
+			podsLeft,
+			podsTotal: session.pods.length,
+			destroyed: session.enemies.destroyed,
+			shields: session.ship.shields.value,
+			difficulty: session.difficulty,
+		});
 	}
 }
