@@ -73,7 +73,7 @@ export class Loop implements World {
 			const entity = scene[i];
 			if (entity.dead) {
 				scene.splice(i, 1);
-				for (const renderer of this.renderers) { renderer.deletePrivateData(entity); }
+				for (const renderer of this.renderers) { renderer.deletePrivateData?.(entity); }
 			} else {
 				i++;
 			}

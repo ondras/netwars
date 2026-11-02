@@ -1,8 +1,9 @@
 import { mat4 } from "gl-matrix";
 import type { Camera } from "../camera.ts";
+import { Color } from "../color.ts";
 import type { Entity } from "../entity/entity.ts";
 import type { Texture } from "../geometry.ts";
-import { Renderer, type RendererOptions } from "./renderer.ts";
+import { syncCanvasSize, type Renderer } from "./renderer.ts";
 import billboardFrag from "../shaders/billboard.frag?raw";
 import billboardVert from "../shaders/billboard.vert?raw";
 import simpleFrag from "../shaders/simple.frag?raw";
@@ -37,14 +38,19 @@ interface EntityData {
 	billboards?: BillboardSet;
 }
 
-export class WebGLRenderer extends Renderer {
+/**
+ * Fills its canvas, which is to be sized by CSS; the drawing buffer follows the CSS size and pixel ratio.
+ */
+export class WebGLRenderer implements Renderer {
+	readonly node = document.createElement("canvas");
+	private readonly camera: Camera;
 	private readonly gl: WebGLRenderingContext;
 	private readonly programs: { simple: SimpleProgram; billboard: BillboardProgram };
 	private currentProgram: SimpleProgram | BillboardProgram | null = null;
 	private readonly entityData = new WeakMap<Entity, EntityData>();
 
-	constructor(camera: Camera, options: Partial<RendererOptions> = {}) {
-		super(camera, options);
+	constructor(camera: Camera, background = new Color(0)) {
+		this.camera = camera;
 
 		const gl = this.node.getContext("webgl", { alpha: false, antialias: false });
 		if (!gl) { throw new Error("WebGL not supported"); }
@@ -62,20 +68,26 @@ export class WebGLRenderer extends Renderer {
 		gl.enable(gl.CULL_FACE);
 		gl.enable(gl.DEPTH_TEST);
 
-		const [r, g, b] = this.options.color.rgb;
+		const [r, g, b] = background.rgb;
 		gl.clearColor(r, g, b, 1);
 	}
 
-	override render(entities: readonly Entity[]): void {
-		super.render(entities);
-		const { gl } = this;
+	render(entities: readonly Entity[]): void {
+		const { gl, node } = this;
+
+		if (syncCanvasSize(node)) {
+			gl.viewport(0, 0, node.width, node.height);
+			this.camera.syncPort(node);
+		}
+		this.camera.update();
+		this.currentProgram = null; /* projection may have changed; useProgram() uploads it */
 
 		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
 		for (const entity of entities) { this.renderEntity(entity); }
 	}
 
-	override deletePrivateData(entity: Entity): void {
+	deletePrivateData(entity: Entity): void {
 		const data = this.entityData.get(entity);
 		if (!data) { return; }
 

@@ -1,32 +1,25 @@
-import type { Camera } from "../camera.ts";
-import { Color } from "../color.ts";
 import type { Entity } from "../entity/entity.ts";
 
-export interface RendererOptions {
-	width: number;
-	height: number;
-	/** Background */
-	color: Color;
+/** Draws the scene once per animation frame */
+export interface Renderer {
+	render(entities: readonly Entity[]): void;
+	/** Release any per-entity resources (called when the entity leaves the scene) */
+	deletePrivateData?(entity: Entity): void;
 }
 
-export abstract class Renderer {
-	readonly node = document.createElement("canvas");
-	protected readonly camera: Camera;
-	protected readonly options: RendererOptions;
+/**
+ * Match the canvas drawing buffer to its CSS size and the device pixel ratio
+ * @returns Whether the size changed
+ */
+export function syncCanvasSize(canvas: HTMLCanvasElement): boolean {
+	const ratio = window.devicePixelRatio || 1;
+	const width = Math.round(canvas.clientWidth * ratio);
+	const height = Math.round(canvas.clientHeight * ratio);
 
-	constructor(camera: Camera, options: Partial<RendererOptions> = {}) {
-		this.camera = camera;
-		this.options = { width: 400, height: 300, color: new Color(0), ...options };
+	if (!width || !height) { return false; } /* not laid out yet */
+	if (canvas.width == width && canvas.height == height) { return false; }
 
-		this.node.width = this.options.width;
-		this.node.height = this.options.height;
-		camera.syncPort(this.node);
-	}
-
-	render(_entities: readonly Entity[]): void {
-		this.camera.update();
-	}
-
-	/** Release any per-entity resources (called when the entity leaves the scene) */
-	deletePrivateData(_entity: Entity): void {}
+	canvas.width = width;
+	canvas.height = height;
+	return true;
 }

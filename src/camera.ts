@@ -35,19 +35,6 @@ export class Camera {
 		mat4.perspective(this.pMatrix, fov, aspect, near, far);
 	}
 
-	lookAt(eye: vec3, center: vec3, up: vec3): void {
-		mat4.lookAt(this.vMatrix, eye, center, up);
-	}
-
-	lookFrom(eye: vec3, rotX: number, rotY: number, rotZ: number): void {
-		const translation = vec3.scale(vec3.create(), eye, -1);
-		mat4.identity(this.vMatrix);
-		mat4.rotateX(this.vMatrix, this.vMatrix, rotX);
-		mat4.rotateY(this.vMatrix, this.vMatrix, rotY);
-		mat4.rotateZ(this.vMatrix, this.vMatrix, rotZ);
-		mat4.translate(this.vMatrix, this.vMatrix, translation);
-	}
-
 	syncPort(node: HTMLCanvasElement): this {
 		this.configure({ aspect: node.width / node.height });
 		return this;

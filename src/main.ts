@@ -5,25 +5,17 @@ import { Pod } from "./entity/pod.ts";
 import { Ship } from "./entity/ship.ts";
 import { Loop } from "./loop.ts";
 import { PlayerPilot } from "./pilot.ts";
-import { CanvasRenderer } from "./render/canvas.ts";
+import { HUD } from "./render/hud.ts";
 import { WebGLRenderer } from "./render/webgl.ts";
 
+const container = document.querySelector<HTMLElement>("#game")!;
 const loop = new Loop().start();
-
 const camera = new Camera();
 
-const r1 = new CanvasRenderer(camera);
-document.body.appendChild(r1.node);
-
-const r2 = new WebGLRenderer(camera);
-document.body.appendChild(r2.node);
-
-const c2 = new Camera();
-c2.lookFrom(vec3.fromValues(0, 50, 0), Math.PI / 2, 0, 0);
-const r3 = new CanvasRenderer(c2, { width: 640, height: 480 });
-document.body.appendChild(r3.node);
-
-loop.renderers.push(r1, r2, r3);
+const ship = new Ship().fromNSH("missile");
+loop.scene.push(ship);
+ship.setPilot(new PlayerPilot(container));
+camera.follow(ship, vec3.fromValues(0, 1, 3));
 
 for (let i = 0; i < 20; i++) {
 	const pod = new Pod();
@@ -34,16 +26,16 @@ for (let i = 0; i < 20; i++) {
 	loop.scene.push(pod);
 }
 
-const ship = new Ship().fromNSH("missile");
-loop.scene.push(ship);
-
-ship.setPilot(new PlayerPilot(r1.node));
-
-camera.follow(ship, vec3.fromValues(0, 1, 3));
+const scene = new WebGLRenderer(camera);
+const hud = new HUD(camera, ship);
+hud.node.className = "hud";
+container.append(scene.node, hud.node);
+loop.renderers.push(scene, hud);
 
 const button = document.createElement("button");
+button.id = "explode";
 button.textContent = "EXPLODE THEM ALL";
 button.onclick = () => {
 	for (const entity of loop.scene) { explode(entity, loop); }
 };
-document.body.appendChild(button);
+document.body.append(button);

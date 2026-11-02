@@ -2,16 +2,42 @@
 <html>
 	<head>
 		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
 		<title>NetWars</title>
 		<style>
-			canvas {
-				image-rendering: crisp-edges;
-				margin: 0.5em;
+			html, body {
+				margin: 0;
+				height: 100%;
+				overflow: hidden;
+				background: #000;
+			}
+
+			#game {
+				position: fixed;
+				inset: 0;
+			}
+
+			#game canvas {
+				position: absolute;
+				inset: 0;
+				width: 100%;
+				height: 100%;
+				display: block;
+			}
+
+			#game canvas.hud {
+				pointer-events: none;
+			}
+
+			#explode {
+				position: fixed;
+				top: 12px;
+				right: 12px;
 			}
 		</style>
 	</head>
 	<body>
-		<p>([repeated] shift accelerate, [repeated] ctrl deaccelerate, upper left viewport provides mouse-based controls)</p>
+		<div id="game"></div>
 		<script type="module" src="/src/main.ts"></script>
 	</body>
 </html>
