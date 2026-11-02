@@ -43,7 +43,7 @@ describe("sound synthesis", () => {
 	it("renders every sound, peaking exactly at its level", () => {
 		for (const [name, definition] of Object.entries(SOUNDS)) {
 			const samples = renderSound(definition);
-			expect(samples.length / SAMPLE_RATE, name).toBeGreaterThan(0.1);
+			expect(samples.length / SAMPLE_RATE, name).toBeGreaterThan(0.03); /* the hit tick is the shortest, ~50 ms */
 			expect(samples.every(Number.isFinite), name).toBe(true);
 			expect(peak(samples), name).toBeCloseTo(definition.level, 6);
 		}

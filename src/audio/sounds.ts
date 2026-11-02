@@ -39,11 +39,10 @@ export const SOUNDS: Record<SoundName, SoundDefinition> = {
 		params: { p_env_sustain: 0.2653, p_env_punch: 0.1727, p_env_decay: 0.2376, p_base_freq: 0.546, p_freq_limit: 0.2, p_freq_ramp: -0.2769, p_duty: 0.6548, p_duty_ramp: -0.0752, p_pha_offset: 0.0133, p_pha_ramp: -0.1198, p_hpf_freq: 0.143 },
 	},
 
-	/** A gun shot hits a ship that survives it */
+	/** A gun shot hits a ship that survives it: a short, bright 3.3 kHz tick ("J3" on the hit sounds page) */
 	hit: {
 		level: 0.55,
-		variants: 3,
-		params: { wave_type: 3, p_env_attack: 0.0498, p_env_sustain: 0.0451, p_env_decay: 0.2098, p_base_freq: 0.228, p_freq_ramp: -0.6747, p_vib_strength: 0.0158, p_pha_ramp: 0.0036, p_lpf_freq: 0.9632, p_lpf_ramp: 0.0092, p_hpf_freq: 0.1576, p_hpf_ramp: 0.004 },
+		params: { wave_type: 2, p_base_freq: 0.9656, p_env_sustain: 0.01, p_env_decay: 0.15, p_env_punch: 0.4 },
 	},
 
 	/** A pirate fires a missile */
