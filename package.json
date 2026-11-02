@@ -6,13 +6,15 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "tsc && vite build",
+    "typecheck": "tsc",
     "preview": "vite preview"
   },
   "dependencies": {
     "gl-matrix": "3.4.4"
   },
   "devDependencies": {
+    "typescript": "7.0.2",
     "vite": "8.3.5"
   }
 }
