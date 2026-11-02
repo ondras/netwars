@@ -155,6 +155,20 @@ describe("explosions", () => {
 		expect(count(loop, Debris)).toBe(0);
 	});
 
+	it("keep the size of scaled models", () => {
+		const loop = new Loop();
+		const entity = target(0); /* triangle base from x=-1 to x=1 */
+		vec3.set(entity.scale, 0.5, 0.5, 0.5);
+		explode(entity, loop);
+		loop.update(STEP);
+
+		const piece = loop.scene.find(e => e instanceof Debris && e.geometries[0].type == "triangle")!;
+		const geometry = piece.geometries[0];
+		if (geometry.type != "triangle") { throw new Error("expected the triangle piece"); }
+		const [, left, right] = geometry.points;
+		expect(vec3.distance(left, right)).toBeCloseTo(1);
+	});
+
 	it("happen only once", () => {
 		const loop = new Loop();
 		const entity = target(0);

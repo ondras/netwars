@@ -36,8 +36,11 @@ export class Debris extends Entity {
 		const geometry = cloneGeometry(source);
 		const position = vec3.create();
 
-		/* rotate all points */
-		for (const point of geometry.points) { vec3.transformQuat(point, point, parent.orientation); }
+		/* scale and rotate all points, as the parent's model matrix did */
+		for (const point of geometry.points) {
+			vec3.multiply(point, point, parent.scale);
+			vec3.transformQuat(point, point, parent.orientation);
+		}
 
 		/* compute debris center */
 		for (const point of geometry.points) { vec3.add(position, position, point); }

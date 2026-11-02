@@ -1,4 +1,5 @@
 import { Camera } from "./camera.ts";
+import { DIFFICULTIES, difficultyLevel, isDifficultyLevel, setDifficulty } from "./difficulty.ts";
 import { explode } from "./entity/debris.ts";
 import { Pod } from "./entity/pod.ts";
 import { Ship } from "./entity/ship.ts";
@@ -35,12 +36,16 @@ hud.node.className = "hud";
 container.append(scene.node, hud.node);
 loop.renderers.push(scene, hud);
 
-const button = document.createElement("button");
-button.id = "explode";
-button.textContent = "EXPLODE THEM ALL";
-button.onclick = () => {
+const select = document.querySelector<HTMLSelectElement>("#difficulty")!;
+for (const [value, { label }] of Object.entries(DIFFICULTIES)) { select.append(new Option(label, value)); }
+select.value = difficultyLevel();
+select.onchange = () => {
+	if (isDifficultyLevel(select.value)) { setDifficulty(select.value); }
+	select.blur(); /* give the keyboard back to the game */
+};
+
+document.querySelector<HTMLButtonElement>("#explode")!.onclick = () => {
 	for (const entity of loop.scene) {
 		if (entity.hittable) { explode(entity, loop); } /* not the pirate spawner */
 	}
 };
-document.body.append(button);

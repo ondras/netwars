@@ -30,15 +30,24 @@
 				pointer-events: none;
 			}
 
-			#explode {
+			#controls {
 				position: fixed;
 				top: 12px;
 				right: 12px;
+				display: flex;
+				align-items: center;
+				gap: 12px;
+				color: rgba(110, 255, 140, 0.85);
+				font: 12px ui-monospace, monospace;
 			}
 		</style>
 	</head>
 	<body>
 		<div id="game"></div>
+		<div id="controls">
+			<label>Difficulty <select id="difficulty"></select></label>
+			<button id="explode">EXPLODE THEM ALL</button>
+		</div>
 		<script type="module" src="/src/main.ts"></script>
 	</body>
 </html>

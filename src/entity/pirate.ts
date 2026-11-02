@@ -1,4 +1,5 @@
 import { quat, vec3 } from "gl-matrix";
+import { difficulty } from "../difficulty.ts";
 import type { World } from "../world.ts";
 import { Grapple } from "./grapple.ts";
 import { Missile } from "./missile.ts";
@@ -20,9 +21,7 @@ export const ESCAPE_RADIUS = 100;
 /** Distance kept from the player when there is nothing to steal (m) */
 const HOLD_DISTANCE = 25;
 
-/** Time between missiles, random within the range (s) */
-const MISSILE_INTERVAL: readonly [number, number] = [4, 8];
-/** Missiles are only fired at a player this close (m) */
+/** Missiles are only fired at a player this close (m); interval, damage and turn rate depend on difficulty() */
 const MISSILE_RANGE = 80;
 
 const random = ([min, max]: readonly [number, number]) => min + (max - min) * Math.random();
@@ -37,7 +36,7 @@ export class Pirate extends Ship {
 	grapple: Grapple | null = null;
 
 	private readonly player: Ship;
-	private missileCooldown = random(MISSILE_INTERVAL);
+	private missileCooldown = random(difficulty().missileInterval);
 	private readonly escapeTo = vec3.create();
 
 	/** Reeling in: 0 at grab, 1 when held at CARGO_OFFSET */
@@ -164,8 +163,9 @@ export class Pirate extends Ship {
 		/* launched towards the player, from just outside the hull */
 		const direction = vec3.normalize(vec3.create(), vec3.subtract(vec3.create(), this.player.position, this.position));
 		const position = vec3.scaleAndAdd(vec3.create(), this.position, direction, this.radius + 0.5);
-		world.spawn(new Missile(position, direction, this, this.player));
+		const { missileDamage, missileTurnRate, missileInterval } = difficulty();
+		world.spawn(new Missile(position, direction, this, this.player, { damage: missileDamage, turnRate: missileTurnRate }));
 
-		this.missileCooldown = random(MISSILE_INTERVAL);
+		this.missileCooldown = random(missileInterval);
 	}
 }

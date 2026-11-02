@@ -1,6 +1,7 @@
 import { vec3 } from "gl-matrix";
 import { beforeAll, describe, expect, it } from "vitest";
 import { Color } from "./color.ts";
+import { DIFFICULTIES, setDifficulty } from "./difficulty.ts";
 import { explode } from "./entity/debris.ts";
 import { Entity } from "./entity/entity.ts";
 import { Missile } from "./entity/missile.ts";
@@ -67,6 +68,35 @@ describe("missiles", () => {
 		run(loop, 3);
 
 		expect(victim.shields.value).toBe(victim.shields.max - 25);
+	});
+
+	it("can be shot down", async () => {
+		const loop = new Loop();
+		const player = shipAt(0, 0, 0);
+		player.trigger = true; /* fires along -Z */
+		const pirate = new Entity();
+		const missile = new Missile(vec3.fromValues(0, 0, -60), vec3.fromValues(0, 0, 1), pirate, player);
+		loop.scene.push(player, pirate);
+		loop.spawn(missile);
+		await settle(); /* missile model */
+
+		run(loop, 2);
+
+		expect(missile.dead).toBe(true);
+		expect(player.shields.value).toBe(player.shields.max);
+	});
+
+	it("point their nose along the flight path", () => {
+		const loop = new Loop();
+		const missile = new Missile(vec3.create(), vec3.fromValues(0, 0, -1), new Entity(), shipAt(30, 10, -20));
+		loop.spawn(missile);
+
+		run(loop, 0.5);
+
+		const nose = vec3.transformQuat(vec3.create(), vec3.fromValues(0, 0, -1), missile.orientation);
+		const heading = vec3.normalize(vec3.create(), missile.velocity);
+		expect(vec3.dot(nose, heading)).toBeCloseTo(1, 4);
+		expect(heading[0]).toBeGreaterThan(0); /* has turned towards the target */
 	});
 
 	it("fly through anything but their target", () => {
@@ -150,14 +180,21 @@ describe("pirates", () => {
 		expect(loop.scene).not.toContain(grapple);
 	});
 
-	it("fire missiles at a player in range", async () => {
+	it("fire missiles at a player in range, as strong as the difficulty says", async () => {
 		const loop = new Loop();
 		const player = shipAt(0, 0, -30);
 		const pirate = new Pirate(player);
 		loop.scene.push(player, pirate);
 		await settle();
 
-		runUntil(loop, () => loop.scene.some(entity => entity instanceof Missile), 10);
+		setDifficulty("easy");
+		try {
+			const missiles = () => loop.scene.filter(entity => entity instanceof Missile);
+			runUntil(loop, () => missiles().length > 0, 15);
+			expect(missiles()[0].damage).toBe(DIFFICULTIES.easy.missileDamage);
+		} finally {
+			setDifficulty("normal");
+		}
 	});
 
 	it("are sent in up to the limit, and replaced", async () => {

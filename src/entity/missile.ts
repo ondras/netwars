@@ -1,9 +1,11 @@
 import { quat, vec3, type ReadonlyVec3 } from "gl-matrix";
-import { Color } from "../color.ts";
-import { circle } from "../geometry.ts";
 import type { World } from "../world.ts";
 import type { Entity } from "./entity.ts";
 import { Shot } from "./shot.ts";
+
+const MODEL = "internal/mssl1";
+/** The model is about 2 m long */
+const SCALE = 0.6;
 
 export interface MissileOptions {
 	/** m/s */
@@ -17,7 +19,7 @@ export interface MissileOptions {
 }
 
 /*
- * Turning radius is speed / turnRate = 15 m: targets closer than that to either side of the missile
+ * Turning radius is speed / turnRate (15 m at 2 rad/s): targets closer than that to either side of the missile
  * cannot be reached; the player (15 m/s, 3.5 rad/s: ~4 m) can out-turn it.
  */
 const DEFAULTS: MissileOptions = {
@@ -27,9 +29,10 @@ const DEFAULTS: MissileOptions = {
 	damage: 25,
 };
 
-const RADIUS = 0.3;
-
-/** Homing shot that can only hit its target; a sharp enough turn makes it miss */
+/**
+ * Homing shot that can only hit its target; a sharp enough turn makes it miss.
+ * It can itself be shot down.
+ */
 export class Missile extends Shot {
 	private readonly turnRate: number;
 
@@ -40,12 +43,26 @@ export class Missile extends Shot {
 
 		this.target = target;
 		this.turnRate = turnRate;
-		this.geometries = [circle(vec3.create(), RADIUS, new Color(0xff8800))];
+		this.hittable = true;
+
+		this.geometries = [];
+		this.fromNSH(MODEL);
+		vec3.set(this.scale, SCALE, SCALE, SCALE);
+		this.faceVelocity();
 	}
 
 	override update(dt: number, world: World): void {
 		if (this.target && !this.target.dead) { this.turnTowards(this.target.position, this.turnRate * dt); }
+		this.faceVelocity();
 		super.update(dt, world);
+	}
+
+	/** Point the nose (-Z) along the flight path */
+	private faceVelocity(): void {
+		const speed = vec3.length(this.velocity);
+		if (!speed) { return; }
+		const direction = vec3.scale(vec3.create(), this.velocity, 1 / speed);
+		quat.rotationTo(this.orientation, vec3.fromValues(0, 0, -1), direction);
 	}
 
 	/** Rotate the velocity towards a point by at most maxAngle, keeping the speed */
