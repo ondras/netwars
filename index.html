@@ -75,20 +75,75 @@
 			.panel select,
 			.panel button {
 				font: inherit;
+				color: inherit;
+				background-color: transparent;
+				border: 1px solid currentColor;
+				border-radius: 0;
+				cursor: pointer;
 			}
 
 			.panel button {
 				margin: 16px 6px 0;
 				padding: 6px 18px;
-				background: transparent;
-				color: inherit;
-				border: 1px solid currentColor;
-				cursor: pointer;
+			}
+
+			.panel select {
+				appearance: none;
+				padding: 4px 30px 4px 10px;
+				/* the arrow, in the panel green */
+				background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='rgb(110,255,140)' stroke-width='1.5'/%3E%3C/svg%3E");
+				background-repeat: no-repeat;
+				background-position: right 10px center;
+				background-size: 10px 6px;
 			}
 
 			.panel button:hover,
-			.panel button:focus-visible {
-				background: rgba(110, 255, 140, 0.15);
+			.panel button:focus-visible,
+			.panel select:hover,
+			.panel select:focus-visible {
+				background-color: rgba(110, 255, 140, 0.15);
+			}
+
+			.panel button:focus-visible,
+			.panel select:focus-visible {
+				outline: 1px solid currentColor;
+				outline-offset: 2px;
+			}
+
+			/* the open list: honoured by Firefox and by Chrome on Windows and Linux */
+			.panel option {
+				color: rgb(110, 255, 140);
+				background: #000;
+			}
+
+			/* browsers with customizable selects (Chrome 135+) style the open list fully */
+			@supports (appearance: base-select) {
+				.panel select,
+				.panel select::picker(select) {
+					appearance: base-select;
+				}
+
+				.panel select::picker-icon {
+					display: none; /* the background arrow is used instead */
+				}
+
+				.panel select::picker(select) {
+					margin-top: 2px;
+					padding: 0;
+					color: rgb(110, 255, 140);
+					background: #000;
+					border: 1px solid rgba(110, 255, 140, 0.5);
+				}
+
+				.panel option {
+					padding: 4px 10px;
+				}
+
+				.panel option:hover,
+				.panel option:focus-visible {
+					background: rgba(110, 255, 140, 0.15);
+					outline: none;
+				}
 			}
 
 			#level-description {
