@@ -1,4 +1,4 @@
-import { vec3 } from "gl-matrix";
+import { quat, vec3 } from "gl-matrix";
 import { beforeAll, describe, expect, it } from "vitest";
 import { Color } from "./color.ts";
 import { DIFFICULTIES, setDifficulty } from "./difficulty.ts";
@@ -8,7 +8,7 @@ import { Missile } from "./entity/missile.ts";
 import { ESCAPE_RADIUS, Pirate } from "./entity/pirate.ts";
 import { Pod } from "./entity/pod.ts";
 import { Ship } from "./entity/ship.ts";
-import { EnemySpawner } from "./entity/spawner.ts";
+import { APPROACH_ANGLES, EnemySpawner, pickWeighted, type Approach } from "./entity/spawner.ts";
 import { triangle } from "./geometry.ts";
 import { Loop } from "./loop.ts";
 import { settle, stubModels } from "./testing.ts";
@@ -198,9 +198,10 @@ describe("pirates", () => {
 	});
 
 	/** Run a fresh spawner once and return its pirate */
-	function spawnOne(player: Ship, pods: Pod[]): Pirate {
+	function spawnOne(player: Ship, pods: Pod[], approach: Approach = "beyond-pods"): Pirate {
+		const approaches = { "beyond-pods": 0, side: 0, behind: 0, [approach]: 1 };
 		const loop = new Loop();
-		loop.scene.push(...pods, new EnemySpawner(player, ["pirate"], { max: 1, firstDelay: 0, minDistance: 120 }));
+		loop.scene.push(...pods, new EnemySpawner(player, ["pirate"], { max: 1, firstDelay: 0, minDistance: 120, approaches }));
 		loop.update(STEP);
 		loop.update(STEP);
 		return loop.scene.find(entity => entity instanceof Pirate)!;
@@ -230,6 +231,53 @@ describe("pirates", () => {
 			const nose = vec3.transformQuat(vec3.create(), vec3.fromValues(0, 0, -1), pirate.orientation);
 			expect(vec3.dot(nose, vec3.negate(fromCenter, fromCenter))).toBeGreaterThan(0); /* facing the pods */
 		}
+	});
+
+	/** Horizontal angle between where the player is heading and the point; positive to the player's right (rad) */
+	function angleOffHeading(player: Ship, point: vec3): number {
+		const heading = vec3.transformQuat(vec3.create(), vec3.fromValues(0, 0, -1), player.orientation);
+		const toPoint = vec3.subtract(vec3.create(), point, player.position);
+		const angle = Math.atan2(toPoint[0], -toPoint[2]) - Math.atan2(heading[0], -heading[2]);
+		return Math.atan2(Math.sin(angle), Math.cos(angle));
+	}
+
+	for (const approach of ["side", "behind"] as const) {
+		it(`appear from the player's ${approach == "side" ? "left or right" : "back"}, out of view, heading for the pods`, () => {
+			const player = shipAt(30, 0, 40);
+			quat.setAxisAngle(player.orientation, [0, 1, 0], 0.7); /* heading somewhere between -Z and -X */
+			const pods = [[0, 0], [10, 5]].map(([x, z]) => {
+				const pod = new Pod();
+				vec3.set(pod.position, x, 0, z);
+				return pod;
+			});
+			const center = vec3.fromValues(5, 0, 2.5);
+			const [min, max] = APPROACH_ANGLES[approach];
+			const sides = new Set<number>();
+
+			for (let i = 0; i < 30; i++) { /* the angle and side are randomized */
+				const pirate = spawnOne(player, pods, approach);
+				const angle = angleOffHeading(player, pirate.position);
+				expect(Math.abs(angle)).toBeGreaterThanOrEqual(min - 1e-6);
+				expect(Math.abs(angle)).toBeLessThanOrEqual(max + 1e-6);
+				expect(horizontalDistance(pirate.position, player.position)).toBeCloseTo(120, 0);
+				sides.add(Math.sign(angle));
+
+				const nose = vec3.transformQuat(vec3.create(), vec3.fromValues(0, 0, -1), pirate.orientation);
+				const toPods = vec3.normalize(vec3.create(), vec3.subtract(vec3.create(), center, pirate.position));
+				expect(vec3.dot(nose, toPods)).toBeGreaterThan(0.99);
+			}
+
+			expect(sides).toEqual(new Set([-1, 1]));
+		});
+	}
+
+	it("pick approaches according to their chances", () => {
+		const counts = { a: 0, b: 0, c: 0, never: 0 };
+		for (let i = 0; i < 4000; i++) { counts[pickWeighted({ a: 0.45, b: 0.4, c: 0.15, never: 0 })]++; }
+		expect(counts.a / 4000).toBeCloseTo(0.45, 1);
+		expect(counts.b / 4000).toBeCloseTo(0.4, 1);
+		expect(counts.c / 4000).toBeCloseTo(0.15, 1);
+		expect(counts.never).toBe(0);
 	});
 
 	it("appear at the minimum distance from the player when there are no free pods", () => {

@@ -8,6 +8,12 @@ import { Pod } from "./pod.ts";
 import { Powerup, type PowerupKind } from "./powerup.ts";
 import type { Ship } from "./ship.ts";
 
+/**
+ * Where a pirate comes from: beyond the pods as seen by the player (so the pods are in the line of fire),
+ * from the player's left or right, or from behind them; the last two out of the player's view
+ */
+export type Approach = "beyond-pods" | "side" | "behind";
+
 export interface EnemySpawnerOptions {
 	/** Most enemies present at once */
 	max: number;
@@ -21,6 +27,8 @@ export interface EnemySpawnerOptions {
 	behind: number;
 	/** Random deviation from the line player → pods → pirate, either way (rad) */
 	spread: number;
+	/** Relative chances of each pirate approach */
+	approaches: Record<Approach, number>;
 }
 
 const ENEMY_DEFAULTS: EnemySpawnerOptions = {
@@ -30,11 +38,23 @@ const ENEMY_DEFAULTS: EnemySpawnerOptions = {
 	minDistance: 120,
 	behind: 40,
 	spread: 0.35,
+	approaches: { "beyond-pods": 0.45, side: 0.4, behind: 0.15 },
+};
+
+const degrees = (angle: number) => angle * Math.PI / 180;
+
+/*
+ * Horizontal angles from the player's heading. With the camera's 45° vertical field of view the screen reaches
+ * 36° to either side at 16:9 and 56° at 32:9, so 60° and more is out of view.
+ */
+export const APPROACH_ANGLES: Record<Exclude<Approach, "beyond-pods">, readonly [number, number]> = {
+	side: [degrees(60), degrees(120)],
+	behind: [degrees(120), degrees(180)],
 };
 
 /**
  * Invisible scene member that sends in a level's enemies in order.
- * Pirates arrive from beyond the pods as seen by the player, so that the pods are in the line of fire;
+ * Pirates take one of the approaches at random and head for the pods;
  * hunters arrive anywhere at minDistance from the player, facing them.
  */
 export class EnemySpawner extends Entity {
@@ -71,11 +91,36 @@ export class EnemySpawner extends Entity {
 		const kind = this.queue.shift()!;
 		const enemy = (kind == "pirate" ? new Pirate(this.player) : new Hunter(this.player));
 		const pods = world.scene.filter((entity): entity is Pod => entity instanceof Pod && !entity.dead && !entity.carrier);
-		const lookAt = (kind == "pirate" ? this.placeBehindPods(enemy.position, pods) : this.placeAroundPlayer(enemy.position));
+		const lookAt = (kind == "pirate" ? this.placePirate(enemy.position, pods) : this.placeAroundPlayer(enemy.position));
 		face(enemy, lookAt);
 
 		this.alive.push(enemy);
 		world.spawn(enemy);
+	}
+
+	/** @returns Point to face: the center of the pod field */
+	private placePirate(position: vec3, pods: readonly Pod[]): vec3 {
+		if (!pods.length) { return this.placeAroundPlayer(position); }
+
+		const approach = pickWeighted(this.options.approaches);
+		if (approach == "beyond-pods") { return this.placeBehindPods(position, pods); }
+
+		this.placeOffHeading(position, APPROACH_ANGLES[approach]);
+		return podCenter(pods);
+	}
+
+	/** At minDistance, turned away from the player's horizontal heading by an angle in the range, to the left or right */
+	private placeOffHeading(position: vec3, [min, max]: readonly [number, number]): void {
+		const player = this.player;
+		const heading = vec3.transformQuat(vec3.create(), vec3.fromValues(0, 0, -1), player.orientation);
+		heading[1] = 0;
+		if (vec3.length(heading) < 1e-3) { vec3.copy(heading, randomHorizontal()); } /* looking straight up or down */
+		vec3.normalize(heading, heading);
+
+		const angle = (min + (max - min) * Math.random()) * (Math.random() < 0.5 ? -1 : 1);
+		vec3.rotateY(heading, heading, vec3.create(), angle);
+		vec3.scaleAndAdd(position, player.position, heading, this.options.minDistance);
+		position[1] = player.position[1] + (Math.random() - 0.5) * 10;
 	}
 
 	/** @returns Point to face */
@@ -94,9 +139,7 @@ export class EnemySpawner extends Entity {
 		const player = this.player.position;
 
 		/* pod field: center and horizontal radius */
-		const center = vec3.create();
-		for (const pod of pods) { vec3.add(center, center, pod.position); }
-		vec3.scale(center, center, 1 / pods.length);
+		const center = podCenter(pods);
 		const radius = Math.max(...pods.map(pod => Math.hypot(pod.position[0] - center[0], pod.position[2] - center[2])));
 
 		/* away from the player, through the center */
@@ -169,6 +212,23 @@ export class PowerupSpawner extends Entity {
 		this.waiting.push(powerup);
 		world.spawn(powerup);
 	}
+}
+
+function podCenter(pods: readonly Pod[]): vec3 {
+	const center = vec3.create();
+	for (const pod of pods) { vec3.add(center, center, pod.position); }
+	return vec3.scale(center, center, 1 / pods.length);
+}
+
+/** A key picked with probability proportional to its weight */
+export function pickWeighted<K extends string>(weights: Record<K, number>): K {
+	const entries = Object.entries(weights) as [K, number][];
+	let left = Math.random() * entries.reduce((sum, [, weight]) => sum + weight, 0);
+	for (const [key, weight] of entries) {
+		left -= weight;
+		if (left < 0) { return key; }
+	}
+	return entries.filter(([, weight]) => weight > 0).at(-1)![0];
 }
 
 function randomHorizontal(): vec3 {
