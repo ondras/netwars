@@ -167,6 +167,36 @@ describe("explosions", () => {
 	});
 });
 
+describe("speed", () => {
+	it("accelerates to the target speed and holds it", () => {
+		const loop = new Loop();
+		const ship = new Ship();
+		ship.engine.speed.target = 5;
+		loop.scene.push(ship);
+
+		run(loop, 0.15); /* 15 m/s² → 2.25 m/s */
+		expect(ship.engine.speed.value).toBeCloseTo(2.25);
+
+		run(loop, 1);
+		expect(ship.engine.speed.value).toBeCloseTo(5);
+		expect(ship.velocity[2]).toBeCloseTo(-5); /* along -Z, the default heading */
+	});
+
+	it("brakes to a lower target and stays within 0..limit", () => {
+		const loop = new Loop();
+		const ship = new Ship();
+		loop.scene.push(ship);
+
+		ship.engine.speed.target = 100;
+		run(loop, 2);
+		expect(ship.engine.speed.value).toBeCloseTo(ship.engine.speed.limit);
+
+		ship.engine.speed.target = -100;
+		run(loop, 2);
+		expect(ship.engine.speed.value).toBeCloseTo(0);
+	});
+});
+
 describe("steering", () => {
 	it("turns at the configured rate even at full deflection", () => {
 		const loop = new Loop();

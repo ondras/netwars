@@ -7,7 +7,7 @@ import { syncCanvasSize, type Renderer } from "./renderer.ts";
 
 const COLOR = "rgba(110, 255, 140, 0.85)";
 const FONT = "12px ui-monospace, monospace";
-const HELP = "Mouse: steer · Button: fire · Shift / Ctrl: throttle up / down";
+const HELP = "Mouse: steer · Button: fire · W / S: speed up / down (hold to repeat)";
 
 /** Distance ahead of the ship where the crosshair is placed (m) */
 const AIM_DISTANCE = 40;
@@ -99,11 +99,18 @@ export class HUD implements Renderer {
 		const x = 24;
 		const bottom = height - 48;
 		const fill = Math.min(1, Math.abs(speed.value) / speed.limit) * barHeight;
+		const target = bottom - Math.min(1, speed.target / speed.limit) * barHeight;
 
 		ctx.strokeRect(x, bottom - barHeight, 10, barHeight);
 		ctx.fillRect(x, bottom - fill, 10, fill);
 
+		/* target speed tick */
+		ctx.beginPath();
+		ctx.moveTo(x - 4, target);
+		ctx.lineTo(x + 14, target);
+		ctx.stroke();
+
 		ctx.fillText(`SPD ${speed.value.toFixed(1)} m/s`, x, bottom + 18);
-		ctx.fillText(`THR ${speed.control >= 0 ? "+" : ""}${speed.control.toFixed(1)}`, x, bottom + 34);
+		ctx.fillText(`SET ${speed.target.toFixed(0)} m/s`, x, bottom + 34);
 	}
 }

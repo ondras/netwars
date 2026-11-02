@@ -5,12 +5,14 @@ import type { World } from "../world.ts";
 import { Entity } from "./entity.ts";
 
 interface Throttle {
+	/** Current speed (m/s) */
 	value: number;
-	/** m/s^2 */
+	/** Speed the engine accelerates or brakes towards (m/s), 0..limit */
+	target: number;
+	/** Acceleration and braking (m/s^2) */
 	changeRate: number;
+	/** Top speed (m/s) */
 	limit: number;
-	/** -1..1 */
-	control: number;
 }
 
 interface Axis {
@@ -28,7 +30,7 @@ export interface Engine {
 
 export class Ship extends Entity {
 	readonly engine: Engine = {
-		speed: { value: 0, changeRate: 15, limit: 15, control: 0 },
+		speed: { value: 0, target: 0, changeRate: 15, limit: 15 },
 		yaw: { changeRate: 3.5, control: 0 },
 		pitch: { changeRate: 3.5, control: 0 },
 	};
@@ -69,23 +71,11 @@ export class Ship extends Entity {
 	private updateSpeed(dt: number): void {
 		const speed = this.engine.speed;
 
-		const sign = Math.sign(speed.value);
-		let diff = speed.changeRate * dt;
+		const target = Math.min(speed.limit, Math.max(0, speed.target));
+		const maxChange = speed.changeRate * dt;
+		speed.value += Math.max(-maxChange, Math.min(maxChange, target - speed.value));
 
-		if (speed.control) { /* force */
-			diff *= speed.control;
-			if (Math.abs(speed.value + diff) > speed.limit) { diff = sign * speed.limit - speed.value; }
-		} else if (sign) { /* decay */
-			diff *= -sign;
-			if (diff / speed.value < -1) { diff = -speed.value; }
-		} else {
-			return;
-		}
-
-		speed.value += diff;
-
-		vec3.set(this.velocity, 0, 0, -1); /* cardinal direction corresponding to default model orientation */
-		vec3.scale(this.velocity, this.velocity, speed.value);
+		vec3.set(this.velocity, 0, 0, -speed.value); /* -Z is the default model orientation */
 		vec3.transformQuat(this.velocity, this.velocity, this.orientation);
 	}
 }
