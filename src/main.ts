@@ -1,4 +1,3 @@
-import { vec3 } from "gl-matrix";
 import { Camera } from "./camera.ts";
 import { explode } from "./entity/debris.ts";
 import { Pod } from "./entity/pod.ts";
@@ -13,9 +12,10 @@ const loop = new Loop().start();
 const camera = new Camera();
 
 const ship = new Ship().fromNSH("missile");
+ship.visible = false; /* cockpit view */
 loop.scene.push(ship);
 ship.setPilot(new PlayerPilot(container));
-camera.follow(ship, vec3.fromValues(0, 1, 3));
+camera.follow(ship);
 
 for (let i = 0; i < 20; i++) {
 	const pod = new Pod();

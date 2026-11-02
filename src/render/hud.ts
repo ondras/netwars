@@ -2,12 +2,10 @@ import { mat4, vec3 } from "gl-matrix";
 import type { Camera } from "../camera.ts";
 import type { Entity } from "../entity/entity.ts";
 import type { Ship } from "../entity/ship.ts";
-import { radarContact } from "../radar.ts";
+import { RadarScope } from "./radar-scope.ts";
 import { syncCanvasSize, type Renderer } from "./renderer.ts";
 
 const COLOR = "rgba(110, 255, 140, 0.85)";
-/** Radar contacts below the ship */
-const COLOR_BELOW = "rgba(255, 170, 60, 0.9)";
 const FONT = "12px ui-monospace, monospace";
 const HELP = "Mouse: steer · Button: fire · Shift / Ctrl: throttle up / down";
 
@@ -15,12 +13,15 @@ const HELP = "Mouse: steer · Button: fire · Shift / Ctrl: throttle up / down";
 const AIM_DISTANCE = 40;
 
 const RADAR_RANGE = 40; /* m */
-const RADAR_RADIUS = 80; /* px */
+/** Radar box size (px) */
+const RADAR_WIDTH = 260;
+const RADAR_HEIGHT = 160;
 
 /** 2D overlay drawn on top of the scene; transparent to mouse events via CSS */
 export class HUD implements Renderer {
 	readonly node = document.createElement("canvas");
 	private readonly ctx = this.node.getContext("2d")!;
+	private readonly radar = new RadarScope(RADAR_RANGE);
 	private readonly camera: Camera;
 	private readonly ship: Ship;
 
@@ -53,76 +54,7 @@ export class HUD implements Renderer {
 		this.drawCrosshair(width, height);
 		this.drawStick(width, height);
 		this.drawSpeed(height);
-		this.drawRadar(entities, width, height);
-	}
-
-	/**
-	 * Top-down scope in the ship's frame: ahead is up. Contacts stand on a stalk showing their height
-	 * (orange when below the ship); contacts beyond range sit on the rim as hollow markers.
-	 */
-	private drawRadar(entities: readonly Entity[], width: number, height: number): void {
-		const { ctx, ship } = this;
-		const r = RADAR_RADIUS;
-		const cx = width - r - 24;
-		const cy = height - r - 24;
-
-		ctx.save();
-
-		/* scope */
-		ctx.beginPath();
-		ctx.arc(cx, cy, r, 0, 2 * Math.PI);
-		ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
-		ctx.fill();
-		ctx.strokeStyle = COLOR;
-		ctx.stroke();
-
-		ctx.globalAlpha = 0.35;
-		ctx.beginPath();
-		ctx.arc(cx, cy, r / 2, 0, 2 * Math.PI);
-		ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r, cy);
-		ctx.moveTo(cx, cy - r); ctx.lineTo(cx, cy + r);
-		ctx.stroke();
-		ctx.globalAlpha = 1;
-
-		ctx.fillStyle = COLOR;
-		ctx.fillText(`${RADAR_RANGE} m`, cx - r, cy - r + 4);
-
-		/* own ship */
-		ctx.beginPath();
-		ctx.moveTo(cx, cy - 5);
-		ctx.lineTo(cx + 4, cy + 4);
-		ctx.lineTo(cx - 4, cy + 4);
-		ctx.closePath();
-		ctx.fill();
-
-		for (const entity of entities) {
-			if (entity == ship || entity.dead || !entity.hittable) { continue; }
-
-			const contact = radarContact(ship, entity, RADAR_RANGE);
-			const x = cx + contact.x * r;
-			const y = cy - contact.forward * r;
-			const color = (contact.height < 0 ? COLOR_BELOW : COLOR);
-			ctx.strokeStyle = ctx.fillStyle = color;
-
-			if (contact.outOfRange) {
-				ctx.beginPath();
-				ctx.arc(x, y, 3, 0, 2 * Math.PI);
-				ctx.stroke();
-				continue;
-			}
-
-			const stalk = Math.max(-r / 2, Math.min(r / 2, contact.height * r));
-			ctx.beginPath();
-			ctx.moveTo(x, y);
-			ctx.lineTo(x, y - stalk);
-			ctx.stroke();
-
-			ctx.beginPath();
-			ctx.arc(x, y - stalk, 2.5, 0, 2 * Math.PI);
-			ctx.fill();
-		}
-
-		ctx.restore();
+		this.radar.draw(ctx, this.ship, entities, width - RADAR_WIDTH - 16, height - RADAR_HEIGHT - 16, RADAR_WIDTH, RADAR_HEIGHT);
 	}
 
 	/** Where shots fired now will be at AIM_DISTANCE */

@@ -9,7 +9,7 @@ export interface RadarContact {
 	forward: number;
 	/** Above the observer; not limited to the range */
 	height: number;
-	/** Horizontally beyond range; x and forward were scaled down onto the rim */
+	/** Outside the square ±range; x and forward were scaled down onto its edge */
 	outOfRange: boolean;
 }
 
@@ -22,11 +22,11 @@ export function radarContact(observer: Entity, target: Entity, range: number): R
 	let forward = -local[2] / range;
 	const height = local[1] / range;
 
-	const distance = Math.hypot(x, forward);
-	const outOfRange = distance > 1;
+	const extent = Math.max(Math.abs(x), Math.abs(forward));
+	const outOfRange = extent > 1;
 	if (outOfRange) {
-		x /= distance;
-		forward /= distance;
+		x /= extent;
+		forward /= extent;
 	}
 
 	return { x, forward, height, outOfRange };

@@ -32,11 +32,19 @@ describe("radarContact", () => {
 		expect(right.forward).toBeCloseTo(0);
 	});
 
-	it("pins targets beyond range to the rim, keeping the direction", () => {
-		const contact = radarContact(at(0, 0, 0), at(300, 0, 400), 100); /* 500 m away */
+	it("pins targets beyond range to the edge of the square, keeping the direction", () => {
+		const contact = radarContact(at(0, 0, 0), at(300, 0, 400), 100); /* 3 right, 4 behind (in ranges) */
 
 		expect(contact.outOfRange).toBe(true);
-		expect(contact.x).toBeCloseTo(0.6);
-		expect(contact.forward).toBeCloseTo(-0.8);
+		expect(contact.x).toBeCloseTo(0.75);
+		expect(contact.forward).toBeCloseTo(-1);
+	});
+
+	it("keeps targets inside the square's corners in range", () => {
+		const contact = radarContact(at(0, 0, 0), at(90, 0, -90), 100); /* 127 m away, but within the square */
+
+		expect(contact.outOfRange).toBe(false);
+		expect(contact.x).toBeCloseTo(0.9);
+		expect(contact.forward).toBeCloseTo(0.9);
 	});
 });

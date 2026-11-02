@@ -13,6 +13,8 @@ export class Entity {
 	dead = false;
 	/** Can be destroyed by shots */
 	hittable = false;
+	/** Drawn by the scene renderer */
+	visible = true;
 
 	#geometries: readonly Geometry[] = [];
 	#radius = 0;

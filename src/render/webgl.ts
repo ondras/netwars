@@ -107,7 +107,7 @@ export class WebGLRenderer implements Renderer {
 	}
 
 	private renderEntity(entity: Entity): void {
-		if (!entity.geometries.length) { return; }
+		if (!entity.visible || !entity.geometries.length) { return; }
 
 		const { gl } = this;
 		let data = this.entityData.get(entity);
