@@ -64,6 +64,8 @@ function renderScore(table: HTMLTableElement, { lines, total }: Score): void {
 export class Menu {
 	/** Called with the chosen level index */
 	onStart: ((level: number) => void) | null = null;
+	/** "Play online" pressed */
+	onOnline: (() => void) | null = null;
 	onResume: (() => void) | null = null;
 	/** Leave the paused level for the main menu */
 	onLeave: (() => void) | null = null;
@@ -101,6 +103,10 @@ export class Menu {
 		};
 
 		element<HTMLButtonElement>("start").onclick = () => this.start();
+		element<HTMLButtonElement>("menu-online").onclick = () => {
+			this.menu.hidden = true;
+			this.onOnline?.();
+		};
 		const volumeSlider = element<HTMLInputElement>("effects-volume");
 		element<HTMLButtonElement>("menu-settings").onclick = () => this.openModal(this.settings, this.menu, volumeSlider);
 		element<HTMLButtonElement>("pause-settings").onclick = () => this.openModal(this.settings, this.pause, volumeSlider);
@@ -134,6 +140,19 @@ export class Menu {
 
 	get visible(): boolean {
 		return !this.menu.hidden;
+	}
+
+	/** Level picked in the main menu */
+	get selectedLevel(): number {
+		return Number(this.levelSelect.value);
+	}
+
+	/** Hide every panel of this menu */
+	hideAll(): void {
+		this.menu.hidden = true;
+		this.hideResult();
+		this.pause.hidden = true;
+		this.dropModal();
 	}
 
 	/** Settings or help is open */

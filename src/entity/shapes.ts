@@ -229,6 +229,20 @@ export const pirateShape = once(() => {
 });
 
 /**
+ * Player ship: a flat arrowhead (two halves, notched at the back) on a low keel; dark, with edges in the HUD's green.
+ * Your own is never drawn (cockpit view); in online play this is how teammates look. As big as the hull it hits with.
+ */
+export const playerShape = once(() => {
+	const half: Point[] = [[0, 0, -1.2], [0.8, 0, 0.75], [0, 0, 0.35]];
+	const dark = new Color(0x333842);
+	return buildShip([
+		{ flat: half, role: "wing" },
+		{ flat: mirror(half), role: "wing" },
+		body([[0, 0.02, -0.75], [0.13, 0.02, 0.3], [-0.13, 0.02, 0.3], [0, 0.17, 0.2], [0, -0.1, 0.25]]),
+	], 0.75, { body: dark, wing: dark, edges: new Color(0x6eff8c), sticks: new Color(0x6eff8c) });
+});
+
+/**
  * Gunship: a core with four tapered blades; nose and tail are flat squares as wide as the blades are thick at the root.
  * Dark, with violet edges and a violet stick forward from each side blade's tip.
  */

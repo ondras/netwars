@@ -15,10 +15,14 @@ export class Shot extends Entity {
 	readonly owner: Entity | null;
 	/** If set, the only entity this shot can hit */
 	target: Entity | null = null;
+	/** If set, the shot can only hit these (e.g. a hunter's: the players) */
+	hitOnly: readonly Entity[] | null = null;
 	/** Shield points taken from a ship on hit */
 	readonly damage: number;
 	/** Heard when it hits a ship that survives the hit */
 	readonly impactSound: SoundName = "hit";
+	/** 0xRRGGBB */
+	readonly color: number;
 	/** Remaining life span (s) */
 	private time: number;
 
@@ -31,8 +35,14 @@ export class Shot extends Entity {
 		this.owner = owner;
 		this.time = lifetime;
 		this.damage = damage;
+		this.color = color;
 
 		this.geometries = [circle(vec3.create(), RADIUS, new Color(color))];
+	}
+
+	/** Remaining life span (s) */
+	get timeLeft(): number {
+		return this.time;
 	}
 
 	override update(dt: number, world: World): void {

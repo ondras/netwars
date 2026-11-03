@@ -144,10 +144,15 @@ export class Leaderboard {
 		return entry;
 	}
 
-	/** Rename a saved score; the name is also remembered for the next one */
-	rename(level: string, id: string, name: string): void {
+	/** The name to save the next score under (and to fly under online) */
+	remember(name: string): void {
 		this.name = cleanName(name);
 		this.write(NAME_KEY, this.name);
+	}
+
+	/** Rename a saved score; the name is also remembered for the next one */
+	rename(level: string, id: string, name: string): void {
+		this.remember(name);
 
 		const entry = this.entries(level).find(entry => entry.id == id);
 		if (entry) {

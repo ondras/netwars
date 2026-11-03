@@ -1,10 +1,10 @@
 import { vec3 } from "gl-matrix";
-import { difficulty } from "../difficulty.ts";
 import type { Geometry } from "../geometry.ts";
 import { Weapon } from "../weapon.ts";
 import type { World } from "../world.ts";
 import { hunterShape } from "./shapes.ts";
 import { Ship } from "./ship.ts";
+import { nearestAlive, toList } from "./targets.ts";
 
 export interface HunterOptions {
 	shape: () => Geometry[];
@@ -37,45 +37,52 @@ const BREAK_DISTANCE = 18;
 const EVADE_TIME = 2.5;
 
 /**
- * Dogfighter: ignores the pods and attacks the player with guns,
- * breaking away after each close pass so that it does not ram or circle the player.
+ * Dogfighter: ignores the pods and attacks the nearest player with guns,
+ * breaking away after each close pass so that it does not ram or circle them.
  */
 export class Hunter extends Ship {
-	private readonly player: Ship;
+	private readonly players: readonly Ship[];
+	private readonly damageFactor: number;
+	/** Player being attacked; picked again after each pass */
+	private target: Ship | null = null;
 	private mode: "attack" | "evade" = "attack";
 	private modeTime = 0;
 	private readonly evadeTo = vec3.create();
 
-	constructor(player: Ship, options: HunterOptions = HUNTER) {
+	/** @param players Whom it hunts: one ship or a list kept up to date by the caller */
+	constructor(players: Ship | readonly Ship[], options: HunterOptions = HUNTER) {
 		super();
-		this.player = player;
+		this.players = toList(players);
+		this.damageFactor = options.damageFactor;
 		this.geometries = options.shape();
 
 		this.shields.value = this.shields.max = options.shields;
 		Object.assign(this.engine.speed, { limit: options.speed, changeRate: options.acceleration });
 		this.engine.yaw.changeRate = this.engine.pitch.changeRate = options.turnRate;
 
-		this.shotTarget = player; /* its shots cannot hit pods or other enemies */
+		this.shotTargets = this.players; /* its shots cannot hit pods or other enemies */
 		this.weapon = new Weapon({
 			reload: options.reload,
 			muzzleSpeed: 90,
 			lifetime: 1.2,
-			damage: difficulty().hunterDamage * options.damageFactor,
+			damage: 0, /* set from the difficulty on update */
 			muzzle: options.muzzle,
 			color: 0xff5544,
 		});
 	}
 
 	override update(dt: number, world: World): void {
+		this.weapon.options.damage = world.difficulty.hunterDamage * this.damageFactor;
 		this.think(dt);
 		super.update(dt, world);
 	}
 
 	private think(dt: number): void {
-		const { player } = this;
 		this.trigger = false;
+		if (!this.target || this.target.dead) { this.target = nearestAlive(this, this.players); }
 
-		if (player.dead) {
+		const player = this.target;
+		if (!player) {
 			this.engine.speed.target = 0;
 			return;
 		}
@@ -86,7 +93,10 @@ export class Hunter extends Ship {
 
 		if (this.mode == "evade") {
 			this.steerTowards(this.evadeTo);
-			if (this.modeTime >= EVADE_TIME) { this.setMode("attack"); }
+			if (this.modeTime >= EVADE_TIME) {
+				this.setMode("attack");
+				this.target = nearestAlive(this, this.players); /* whoever is closest now */
+			}
 			return;
 		}
 

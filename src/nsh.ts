@@ -5,7 +5,27 @@ import { quat, vec3 } from "gl-matrix";
 import { Color } from "./color.ts";
 import { line, quad, triangle, type Geometry } from "./geometry.ts";
 
-const MODELS_PATH = `${import.meta.env.BASE_URL}models/`;
+/* import.meta.env is Vite's; the game server runs this file in plain Node, where it is missing */
+const MODELS_PATH = `${import.meta.env?.BASE_URL ?? "/"}models/`;
+
+/** Reads a model file's text by name (e.g. "internal/pod1") */
+export type ModelSource = (name: string) => Promise<string>;
+
+/** In the browser: fetched from the models directory */
+const fetchModel: ModelSource = async name => {
+	const url = `${MODELS_PATH}${name}.nsh`;
+	const response = await fetch(url);
+	if (!response.ok) { throw new Error(`Cannot load ${url}: HTTP ${response.status}`); }
+	return response.text();
+};
+
+let source: ModelSource = fetchModel;
+
+/** Where models come from from now on (the server reads them from disk); forgets models loaded before */
+export function setModelSource(next: ModelSource): void {
+	source = next;
+	cache.clear();
+}
 
 /** Model units per meter */
 const SCALE = 1 / 100;
@@ -59,15 +79,10 @@ const cache = new Map<string, Promise<Geometry[]>>();
  * @param name Model path relative to the models directory, without extension (e.g. "internal/pod1")
  */
 export function loadNSH(name: string): Promise<Geometry[]> {
-	const url = `${MODELS_PATH}${name}.nsh`;
-
-	let promise = cache.get(url);
+	let promise = cache.get(name);
 	if (!promise) {
-		promise = fetch(url).then(response => {
-			if (!response.ok) { throw new Error(`Cannot load ${url}: HTTP ${response.status}`); }
-			return response.text();
-		}).then(createNSH);
-		cache.set(url, promise);
+		promise = source(name).then(createNSH);
+		cache.set(name, promise);
 	}
 
 	return promise;

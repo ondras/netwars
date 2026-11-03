@@ -4,6 +4,7 @@ import { cuboid, pyramid, ring, type Geometry } from "../geometry.ts";
 import type { World } from "../world.ts";
 import { Entity } from "./entity.ts";
 import { ROCKET_CAPACITY, type Ship } from "./ship.ts";
+import { toList } from "./targets.ts";
 
 export type PowerupKind = "shields" | "rapid" | "boost" | "rockets";
 
@@ -81,12 +82,15 @@ const PICKUP_GAP = 1;
 /** Tumbling shape, collected by flying through it */
 export class Powerup extends Entity {
 	readonly kind: PowerupKind;
-	private readonly player: Ship;
+	/** The player who flew through it */
+	collector: Ship | null = null;
+	private readonly players: readonly Ship[];
 
-	constructor(kind: PowerupKind, player: Ship) {
+	/** @param players Who can collect it: one ship or a list kept up to date by the caller */
+	constructor(kind: PowerupKind, players: Ship | readonly Ship[]) {
 		super();
 		this.kind = kind;
-		this.player = player;
+		this.players = toList(players);
 		this.geometries = POWERUPS[kind].shape();
 		vec3.set(this.angularVelocity, 0.8, 1.6, 0);
 	}
@@ -94,12 +98,15 @@ export class Powerup extends Entity {
 	override update(dt: number, world: World): void {
 		super.update(dt, world);
 
-		const { player } = this;
-		if (player.dead) { return; }
-		if (vec3.distance(this.position, player.position) <= this.radius + player.radius + PICKUP_GAP) {
-			applyPowerup(this.kind, player);
-			world.sound("powerup");
-			this.dead = true;
+		for (const player of this.players) {
+			if (player.dead) { continue; }
+			if (vec3.distance(this.position, player.position) <= this.radius + player.radius + PICKUP_GAP) {
+				applyPowerup(this.kind, player);
+				world.sound("powerup", undefined, player);
+				this.collector = player;
+				this.dead = true;
+				return;
+			}
 		}
 	}
 }

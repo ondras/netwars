@@ -9,7 +9,7 @@ export const GUNSHIP: HunterOptions = {
 
 /** Armoured dogfighter */
 export class Gunship extends Hunter {
-	constructor(player: Ship) {
-		super(player, GUNSHIP);
+	constructor(players: Ship | readonly Ship[]) {
+		super(players, GUNSHIP);
 	}
 }

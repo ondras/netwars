@@ -95,7 +95,9 @@ export class Debris extends Entity {
 export function explode(entity: Entity, world: World, force = EXPLOSION_SPEED): void {
 	if (entity.dead) { return; }
 	entity.dead = true;
+	entity.exploded = true;
 	world.sound("explosion", entity.position);
+	if (!world.debris) { return; }
 
 	for (const geometry of entity.geometries) {
 		world.spawn(Debris.fromGeometry(entity, geometry, force), Debris.particle(entity, force));

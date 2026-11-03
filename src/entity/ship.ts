@@ -75,8 +75,8 @@ export class Ship extends Entity {
 
 	/** Fire whenever the weapon is ready */
 	trigger = false;
-	/** If set, shots fired can only hit this entity */
-	shotTarget: Entity | null = null;
+	/** If set, shots fired can only hit these entities */
+	shotTargets: readonly Entity[] | null = null;
 
 	/** Homing rockets left */
 	rockets = 0;
@@ -170,7 +170,7 @@ export class Ship extends Entity {
 		if (this.trigger) {
 			const shot = this.weapon.fire(this);
 			if (shot) {
-				shot.target = this.shotTarget;
+				shot.hitOnly = this.shotTargets;
 				world.spawn(shot);
 				world.sound("cannon", this.position);
 			}

@@ -1,5 +1,4 @@
 import { quat, vec3 } from "gl-matrix";
-import { difficulty } from "../difficulty.ts";
 import type { Geometry } from "../geometry.ts";
 import type { World } from "../world.ts";
 import { Grapple } from "./grapple.ts";
@@ -7,6 +6,7 @@ import { Missile } from "./missile.ts";
 import { Pod } from "./pod.ts";
 import { pirateShape } from "./shapes.ts";
 import { Ship } from "./ship.ts";
+import { nearestAlive, toList } from "./targets.ts";
 
 export interface PirateOptions {
 	shape: () => Geometry[];
@@ -36,14 +36,14 @@ export const ESCAPE_RADIUS = 150;
 /** Distance kept from the player when there is nothing to steal (m) */
 const HOLD_DISTANCE = 25;
 
-/** Missiles are only fired at a player this close (m); interval, damage and turn rate depend on difficulty() */
+/** Missiles are only fired at a player this close (m); interval, damage and turn rate depend on the difficulty */
 export const MISSILE_RANGE = 80;
 
 const random = ([min, max]: readonly [number, number]) => min + (max - min) * Math.random();
 
 /**
  * Flies to the nearest free pod, carries it away beyond ESCAPE_RADIUS (the pod is then lost)
- * and now and then fires a homing missile at the player.
+ * and now and then fires a homing missile at the nearest player.
  */
 export class Pirate extends Ship {
 	/** Pod being carried away */
@@ -52,9 +52,10 @@ export class Pirate extends Ship {
 	/** Got away with a pod (it is then dead, but not destroyed) */
 	escaped = false;
 
-	private readonly player: Ship;
+	private readonly players: readonly Ship[];
 	private readonly missiles: boolean;
-	private missileCooldown = random(difficulty().missileInterval);
+	/** Time to the next missile (s); drawn from the difficulty's interval on the first update */
+	private missileCooldown: number | null = null;
 	private readonly escapeTo = vec3.create();
 
 	/** Reeling in: 0 at grab, 1 when held at CARGO_OFFSET */
@@ -63,9 +64,10 @@ export class Pirate extends Ship {
 	private readonly grabOffset = vec3.create();
 	private readonly grabOrientation = quat.create();
 
-	constructor(player: Ship, options: PirateOptions = PIRATE) {
+	/** @param players Whom it fires at and keeps an eye on: one ship or a list kept up to date by the caller */
+	constructor(players: Ship | readonly Ship[], options: PirateOptions = PIRATE) {
 		super();
-		this.player = player;
+		this.players = toList(players);
 		this.missiles = options.missiles;
 		this.geometries = options.shape();
 
@@ -98,11 +100,12 @@ export class Pirate extends Ship {
 			this.engine.speed.target = this.engine.speed.limit;
 		} else {
 			const pod = this.nearestFreePod(world.scene);
+			const player = nearestAlive(this, this.players);
 			if (pod) {
 				this.approach(pod, world);
-			} else if (!this.player.dead) {
-				this.steerTowards(this.player.position);
-				const distance = vec3.distance(this.position, this.player.position);
+			} else if (player) {
+				this.steerTowards(player.position);
+				const distance = vec3.distance(this.position, player.position);
 				this.engine.speed.target = (distance > HOLD_DISTANCE ? this.engine.speed.limit : 0);
 			} else {
 				this.engine.speed.target = 0;
@@ -178,17 +181,19 @@ export class Pirate extends Ship {
 
 	private fireMissiles(dt: number, world: World): void {
 		if (!this.missiles) { return; }
-		this.missileCooldown = Math.max(0, this.missileCooldown - dt);
-		if (this.missileCooldown > 0 || this.player.dead) { return; }
-		if (vec3.distance(this.position, this.player.position) > MISSILE_RANGE) { return; }
+		const { missileDamage, missileTurnRate, missileInterval } = world.difficulty;
+		this.missileCooldown = Math.max(0, (this.missileCooldown ?? random(missileInterval)) - dt);
+		if (this.missileCooldown > 0) { return; }
+
+		const player = nearestAlive(this, this.players);
+		if (!player || vec3.distance(this.position, player.position) > MISSILE_RANGE) { return; }
 
 		/* launched towards the player, from just outside the hull */
-		const direction = vec3.normalize(vec3.create(), vec3.subtract(vec3.create(), this.player.position, this.position));
+		const direction = vec3.normalize(vec3.create(), vec3.subtract(vec3.create(), player.position, this.position));
 		const position = vec3.scaleAndAdd(vec3.create(), this.position, direction, this.radius + 0.5);
-		const { missileDamage, missileTurnRate, missileInterval } = difficulty();
-		world.spawn(new Missile(position, direction, this, this.player, { damage: missileDamage, turnRate: missileTurnRate }));
+		world.spawn(new Missile(position, direction, this, player, { damage: missileDamage, turnRate: missileTurnRate }));
 		world.sound("launch", position);
-		world.sound("warning");
+		world.sound("warning", undefined, player); /* only its target is warned */
 
 		this.missileCooldown = random(missileInterval);
 	}

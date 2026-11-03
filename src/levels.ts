@@ -1,4 +1,7 @@
 export const ENEMY_KINDS = ["pirate", "raider", "hunter", "gunship"] as const;
+
+/** Horizontal half-size of the square pods are scattered in (m) */
+export const POD_FIELD = 25;
 export type EnemyKind = (typeof ENEMY_KINDS)[number];
 
 export interface LevelConfig {

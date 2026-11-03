@@ -349,6 +349,84 @@
 				font-size: 12px;
 				opacity: 0.7;
 			}
+
+			.panel .lead,
+			.panel .note {
+				margin: 4px 0 12px;
+				font-size: 12px;
+				opacity: 0.85;
+			}
+
+			.panel button:disabled,
+			.panel select:disabled {
+				opacity: 0.4;
+				cursor: default;
+			}
+
+			.panel button:disabled:hover,
+			.panel select:disabled:hover {
+				background-color: transparent;
+			}
+
+			.panel .error {
+				margin: 12px 0 0;
+				color: rgb(255, 110, 90);
+			}
+
+			.panel .code {
+				letter-spacing: 0.25em;
+				text-transform: uppercase;
+			}
+
+			#online-join .join {
+				display: flex;
+				gap: 8px;
+			}
+
+			#online-code {
+				width: 6.5em;
+			}
+
+			#online-join button {
+				margin: 0;
+				padding: 4px 12px;
+			}
+
+			#lobby .invite {
+				display: flex;
+				gap: 8px;
+				margin: 8px 0 4px;
+			}
+
+			#lobby-link {
+				flex: 1;
+				min-width: 0;
+				width: auto;
+				font-size: 12px;
+			}
+
+			#lobby .invite button {
+				margin: 0;
+				padding: 4px 12px;
+				white-space: nowrap;
+			}
+
+			#lobby-players {
+				margin: 0 0 8px;
+				padding-left: 2.2em;
+				text-align: left;
+			}
+
+			#lobby-players li {
+				padding: 2px 0;
+			}
+
+			#lobby-description {
+				margin: 0 0 8px;
+				font-size: 12px;
+				text-align: left;
+				opacity: 0.85;
+			}
 		</style>
 	</head>
 	<body>
@@ -359,10 +437,36 @@
 			<div class="row"><label for="level">Level</label><select id="level"></select></div>
 			<p id="level-description"></p>
 			<div class="row"><label for="difficulty">Difficulty</label><select id="difficulty"></select></div>
-			<button id="start">Start</button><button id="menu-settings">Settings</button><button id="menu-help">Help</button>
+			<button id="start">Start</button><button id="menu-online">Play online</button><br><button id="menu-settings">Settings</button><button id="menu-help">Help</button>
 			<h3 id="menu-board-title">Best scores</h3>
 			<table id="menu-board" class="board"></table>
 			<p class="help">Mouse: steer · Button: fire<br>W / S: speed up / down · Esc: pause<br>Keep an enemy ahead to lock on, then<br>Enter / Space: launch a rocket</p>
+		</div>
+
+		<div id="online" class="panel" hidden>
+			<h2>Play online</h2>
+			<p class="lead">Co-op for up to 4 pilots: guard the pods together.</p>
+			<div class="row"><label for="online-name">Your name</label><input id="online-name" maxlength="16" autocomplete="nickname" spellcheck="false"></div>
+			<button id="online-create">Create a room</button>
+			<h3>Or join a room</h3>
+			<form id="online-join" class="row">
+				<label for="online-code">Room code</label>
+				<span class="join"><input id="online-code" class="code" maxlength="4" autocomplete="off" spellcheck="false"><button id="online-join-button" type="submit">Join</button></span>
+			</form>
+			<p id="online-error" class="error" role="alert" hidden></p>
+			<button id="online-back">Back</button>
+		</div>
+
+		<div id="lobby" class="panel" hidden>
+			<h2>Room <span id="lobby-code" class="code"></span></h2>
+			<div class="invite"><input id="lobby-link" readonly aria-label="Invite link"><button id="lobby-copy">Copy link</button></div>
+			<h3 id="lobby-count">Pilots</h3>
+			<ol id="lobby-players"></ol>
+			<div class="row"><label for="lobby-level">Level</label><select id="lobby-level"></select></div>
+			<p id="lobby-description"></p>
+			<div class="row"><label for="lobby-difficulty">Difficulty</label><select id="lobby-difficulty"></select></div>
+			<p id="lobby-note" class="note"></p>
+			<button id="lobby-start">Start</button><button id="lobby-leave">Leave</button>
 		</div>
 
 		<div id="result" class="panel" hidden>

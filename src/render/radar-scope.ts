@@ -2,6 +2,7 @@ import { mat4, vec3 } from "gl-matrix";
 import type { Entity } from "../entity/entity.ts";
 import { Gunship } from "../entity/gunship.ts";
 import { Hunter } from "../entity/hunter.ts";
+import { PlayerShip } from "../entity/player-ship.ts";
 import { Raider } from "../entity/raider.ts";
 import { Pod } from "../entity/pod.ts";
 import { Powerup } from "../entity/powerup.ts";
@@ -16,6 +17,8 @@ export const HUNTER_COLOR = "rgb(255, 130, 40)";
 export const RAIDER_COLOR = "rgb(80, 235, 200)";
 export const GUNSHIP_COLOR = "rgb(200, 110, 255)";
 export const POWERUP_COLOR = "rgb(200, 200, 200)";
+/** Teammates in online play: the HUD's green */
+export const TEAM_COLOR = "rgb(110, 255, 140)";
 
 /** Grid cells per side */
 const CELLS = 4;
@@ -28,6 +31,7 @@ function contactColor(entity: Entity): string | null {
 	if (entity instanceof Raider) { return RAIDER_COLOR; }
 	if (entity instanceof Gunship) { return GUNSHIP_COLOR; }
 	if (entity instanceof Hunter) { return HUNTER_COLOR; }
+	if (entity instanceof PlayerShip) { return TEAM_COLOR; }
 	if (entity instanceof Ship) { return SHIP_COLOR; }
 	if (entity instanceof Powerup) { return POWERUP_COLOR; }
 	return null;

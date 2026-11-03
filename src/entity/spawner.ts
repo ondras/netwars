@@ -9,12 +9,13 @@ import { Pod } from "./pod.ts";
 import { Powerup, type PowerupKind } from "./powerup.ts";
 import { Raider } from "./raider.ts";
 import type { Ship } from "./ship.ts";
+import { toList } from "./targets.ts";
 
-const ENEMIES: Record<EnemyKind, (player: Ship) => Ship> = {
-	pirate: player => new Pirate(player),
-	raider: player => new Raider(player),
-	hunter: player => new Hunter(player),
-	gunship: player => new Gunship(player),
+const ENEMIES: Record<EnemyKind, (players: readonly Ship[]) => Ship> = {
+	pirate: players => new Pirate(players),
+	raider: players => new Raider(players),
+	hunter: players => new Hunter(players),
+	gunship: players => new Gunship(players),
 };
 
 /**
@@ -65,18 +66,23 @@ export const APPROACH_ANGLES: Record<Exclude<Approach, "beyond-pods">, readonly 
  * Invisible scene member that sends in a level's enemies in order.
  * Pirates take one of the approaches at random and head for the pods;
  * hunters arrive anywhere at minDistance from the player, facing them.
+ * With several players, each enemy is placed by one of them still alive, picked at random.
  */
 export class EnemySpawner extends Entity {
 	private readonly options: EnemySpawnerOptions;
-	private readonly player: Ship;
+	private readonly players: readonly Ship[];
+	/** The player the enemy being placed is placed by */
+	private player: Ship;
 	private readonly queue: EnemyKind[];
 	/** Every enemy sent in so far, dead or alive */
 	private readonly sent: Array<{ kind: EnemyKind; ship: Ship }> = [];
 	private timer: number;
 
-	constructor(player: Ship, enemies: readonly EnemyKind[], options: Partial<EnemySpawnerOptions> = {}) {
+	/** @param players One ship or a list kept up to date by the caller */
+	constructor(players: Ship | readonly Ship[], enemies: readonly EnemyKind[], options: Partial<EnemySpawnerOptions> = {}) {
 		super();
-		this.player = player;
+		this.players = toList(players);
+		this.player = this.players[0];
 		this.queue = [...enemies];
 		this.options = { ...ENEMY_DEFAULTS, ...options };
 		this.timer = this.options.firstDelay;
@@ -107,8 +113,12 @@ export class EnemySpawner extends Entity {
 		if (this.timer > 0) { return; }
 		this.timer = this.options.interval;
 
+		const alive = this.players.filter(player => !player.dead);
+		if (!alive.length) { return; }
+		this.player = alive[Math.floor(Math.random() * alive.length)];
+
 		const kind = this.queue.shift()!;
-		const enemy = ENEMIES[kind](this.player);
+		const enemy = ENEMIES[kind](this.players);
 		const pods = world.scene.filter((entity): entity is Pod => entity instanceof Pod && !entity.dead && !entity.carrier);
 		/* pod thieves (pirates, raiders) take one of the approaches; dogfighters (hunters, gunships) come at the player */
 		const lookAt = (enemy instanceof Pirate ? this.placePirate(enemy.position, pods) : this.placeAroundPlayer(enemy.position));
@@ -195,13 +205,14 @@ const POWERUP_KINDS: readonly PowerupKind[] = ["shields", "rapid", "boost", "roc
 /** Invisible scene member that places random powerups around the pod field */
 export class PowerupSpawner extends Entity {
 	private readonly options: PowerupSpawnerOptions;
-	private readonly player: Ship;
+	private readonly players: readonly Ship[];
 	private readonly waiting: Powerup[] = [];
 	private timer: number;
 
-	constructor(player: Ship, options: Partial<PowerupSpawnerOptions> = {}) {
+	/** @param players Who can collect them: one ship or a list kept up to date by the caller */
+	constructor(players: Ship | readonly Ship[], options: Partial<PowerupSpawnerOptions> = {}) {
 		super();
-		this.player = player;
+		this.players = toList(players);
 		this.options = { interval: 20, max: 2, radius: 50, ...options };
 		this.timer = this.options.interval;
 	}
@@ -218,7 +229,7 @@ export class PowerupSpawner extends Entity {
 		this.timer = this.options.interval;
 
 		const kind = POWERUP_KINDS[Math.floor(Math.random() * POWERUP_KINDS.length)];
-		const powerup = new Powerup(kind, this.player);
+		const powerup = new Powerup(kind, this.players);
 
 		const pods = world.scene.filter(entity => entity instanceof Pod && !entity.dead);
 		const center = vec3.create();

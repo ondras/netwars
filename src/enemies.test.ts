@@ -1,7 +1,7 @@
 import { quat, vec3 } from "gl-matrix";
 import { beforeAll, describe, expect, it } from "vitest";
 import { Color } from "./color.ts";
-import { DIFFICULTIES, setDifficulty } from "./difficulty.ts";
+import { DIFFICULTIES } from "./difficulty.ts";
 import { explode } from "./entity/debris.ts";
 import { Entity } from "./entity/entity.ts";
 import { Missile } from "./entity/missile.ts";
@@ -182,19 +182,31 @@ describe("pirates", () => {
 
 	it("fire missiles at a player in range, as strong as the difficulty says", async () => {
 		const loop = new Loop();
+		loop.difficulty = DIFFICULTIES.easy;
 		const player = shipAt(0, 0, -30);
 		const pirate = new Pirate(player);
 		loop.scene.push(player, pirate);
 		await settle();
 
-		setDifficulty("easy");
-		try {
-			const missiles = () => loop.scene.filter(entity => entity instanceof Missile);
-			runUntil(loop, () => missiles().length > 0, 15);
-			expect(missiles()[0].damage).toBe(DIFFICULTIES.easy.missileDamage);
-		} finally {
-			setDifficulty("normal");
-		}
+		const missiles = () => loop.scene.filter(entity => entity instanceof Missile);
+		runUntil(loop, () => missiles().length > 0, 15);
+		expect(missiles()[0].damage).toBe(DIFFICULTIES.easy.missileDamage);
+	});
+
+	it("fire at the nearest of several players, and warn only that one", async () => {
+		const loop = new Loop();
+		const near = shipAt(0, 0, -30);
+		const far = shipAt(0, 0, 60);
+		const pirate = new Pirate([far, near]);
+		loop.scene.push(near, far, pirate);
+		const warned: unknown[] = [];
+		loop.onSound = (name, _at, to) => { if (name == "warning") { warned.push(to); } };
+		await settle();
+
+		const missiles = () => loop.scene.filter((entity): entity is Missile => entity instanceof Missile);
+		runUntil(loop, () => missiles().length > 0, 15);
+		expect(missiles()[0].target).toBe(near);
+		expect(warned).toEqual([near]);
 	});
 
 	/** Run a fresh spawner once and return its pirate */

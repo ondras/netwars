@@ -11,6 +11,10 @@ export class Entity {
 	readonly angularVelocity = vec3.create();
 	readonly scale = vec3.fromValues(1, 1, 1);
 	dead = false;
+	/** Died by explode(), as opposed to leaving quietly (expired, collected, got away) */
+	exploded = false;
+	/** Moved by its own update(); false for copies of entities simulated elsewhere (online play) */
+	simulated = true;
 	/** Can be destroyed by shots */
 	hittable = false;
 	/** Drawn by the scene renderer */

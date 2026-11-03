@@ -7,7 +7,7 @@ export const RAIDER: PirateOptions = { shape: raiderShape, shields: 30, speed: 1
 
 /** Fast pod thief */
 export class Raider extends Pirate {
-	constructor(player: Ship) {
-		super(player, RAIDER);
+	constructor(players: Ship | readonly Ship[]) {
+		super(players, RAIDER);
 	}
 }
