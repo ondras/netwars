@@ -8,24 +8,28 @@ import { Missile } from "../src/entity/missile.ts";
 import { PlayerShip } from "../src/entity/player-ship.ts";
 import { Pod } from "../src/entity/pod.ts";
 import { Powerup } from "../src/entity/powerup.ts";
-import { Ship } from "../src/entity/ship.ts";
+import { ROCKET_CAPACITY, Ship } from "../src/entity/ship.ts";
 import { Shot } from "../src/entity/shot.ts";
 import { EnemySpawner, PowerupSpawner } from "../src/entity/spawner.ts";
 import { LEVELS, levelOutcome, POD_FIELD, type Outcome } from "../src/levels.ts";
 import { Loop } from "../src/loop.ts";
 import { extraOf, kindIndex, kindOf } from "../src/net/kinds.ts";
 import {
-	MAX_HIT_DAMAGE, MAX_PLAYERS, round, SNAPSHOT_STEPS,
-	type ClientMessage, type EntityRecord, type GameEvent, type HitReport, type RoomInfo, type RoomState, type ServerMessage,
+	MAX_HIT_DAMAGE, MAX_PLAYERS, RECONNECT_GRACE, round, SNAPSHOT_STEPS,
+	type ClientMessage, type EntityRecord, type GameEvent, type HitReport, type OutcomeMessage, type Quat, type RoomInfo, type RoomState,
+	type ServerMessage, type StartMessage,
 } from "../src/net/protocol.ts";
 import type { Pilot } from "../src/pilot.ts";
 import { cleanName } from "../src/scores.ts";
 import { Weapon } from "../src/weapon.ts";
 
-/** Someone connected, as rooms see them */
+/** Someone in a room, as rooms see them; their connection may drop and come back */
 export interface Member {
 	readonly id: number;
 	name: string;
+	/** Secret that lets the same browser take its place back on a new connection */
+	readonly token: string;
+	/** Goes nowhere while their connection is down */
 	send(message: ServerMessage): void;
 }
 
@@ -64,7 +68,10 @@ interface Flyer {
 }
 
 interface Level {
+	/** Counts the room's levels */
+	readonly run: number;
 	readonly index: number;
+	readonly difficulty: DifficultyLevel;
 	readonly loop: Loop;
 	readonly enemies: EnemySpawner;
 	readonly pods: readonly Pod[];
@@ -72,6 +79,8 @@ interface Level {
 	readonly flyers: Map<number, Flyer>;
 	steps: number;
 	outcome: Outcome | null;
+	/** Sent when the level ended; again to a player who comes back after that */
+	result: OutcomeMessage | null;
 }
 
 /** An event for everyone, for one member only (`to`), or for everyone but one (`except`) */
@@ -101,6 +110,10 @@ export class Room {
 	state: RoomState = "lobby";
 
 	private level: Level | null = null;
+	/** Levels started so far */
+	private runs = 0;
+	/** Members whose connection dropped → how long ago (s); they keep their place for RECONNECT_GRACE */
+	private readonly away = new Map<number, number>();
 	private readonly ids = new WeakMap<Entity, number>();
 	private readonly byId = new Map<number, Entity>();
 	private nextId = 1;
@@ -120,7 +133,7 @@ export class Room {
 		return {
 			code: this.code,
 			host: this.host,
-			players: this.members.map(({ id, name }) => ({ id, name })),
+			players: this.members.map(({ id, name }) => ({ id, name, away: this.away.has(id) })),
 			level: this.levelIndex,
 			difficulty: this.difficulty,
 			state: this.state,
@@ -132,9 +145,14 @@ export class Room {
 		if (this.members.length >= MAX_PLAYERS) { return `Room ${this.code} is full: ${MAX_PLAYERS} pilots at most.`; }
 		if (this.state == "playing") { return `Room ${this.code} is in the middle of a level. Try again when it ends.`; }
 		this.members.push(member);
-		member.send({ type: "welcome", you: member.id, room: this.info() });
+		this.welcome(member);
 		this.broadcastRoom(member.id);
 		return null;
+	}
+
+	/** The room as it is, to a member who just came in */
+	welcome(member: Member): void {
+		member.send({ type: "welcome", you: member.id, room: this.info(), token: member.token });
 	}
 
 	/** @returns Whether the room is empty now */
@@ -142,6 +160,7 @@ export class Room {
 		const index = this.members.findIndex(member => member.id == memberId);
 		if (index < 0) { return this.members.length == 0; }
 		this.members.splice(index, 1);
+		this.away.delete(memberId);
 
 		const flyer = this.level?.flyers.get(memberId);
 		if (flyer) {
@@ -153,9 +172,36 @@ export class Room {
 			this.level = null;
 			return true;
 		}
-		if (this.host == memberId) { this.host = this.members[0].id; }
+		this.pickHost();
 		this.broadcastRoom();
 		return false;
+	}
+
+	/** The member's connection dropped: they keep their place for RECONNECT_GRACE, their ship holding course */
+	disconnected(memberId: number): void {
+		if (!this.members.some(({ id }) => id == memberId)) { return; }
+		this.away.set(memberId, 0);
+		const flyer = this.level?.flyers.get(memberId);
+		if (flyer) { flyer.pilot.yaw = flyer.pilot.pitch = 0; }
+		this.pickHost();
+		this.broadcastRoom();
+	}
+
+	/** The member is back on a new connection: they get the room, and the level as it is now if one is on */
+	reconnected(memberId: number): void {
+		const member = this.members.find(({ id }) => id == memberId);
+		if (!member) { return; }
+		this.away.delete(memberId);
+		this.pickHost();
+		this.welcome(member);
+
+		const level = this.level;
+		const flyer = level?.flyers.get(memberId);
+		if (level && flyer) {
+			if (this.state == "playing") { member.send(this.startMessage(level, flyer)); }
+			if (this.state == "over" && level.result) { member.send(level.result); }
+		}
+		this.broadcastRoom(memberId);
 	}
 
 	rename(memberId: number, name: string): void {
@@ -177,16 +223,9 @@ export class Room {
 	start(memberId: number, levelIndex = this.levelIndex): void {
 		if (memberId != this.host || this.state == "playing" || !LEVELS[levelIndex]) { return; }
 		this.levelIndex = levelIndex;
-		this.level = this.createLevel(levelIndex);
+		const level = this.level = this.createLevel(levelIndex);
 		this.state = "playing";
-
-		const ships: Record<number, number> = {};
-		for (const [id, flyer] of this.level.flyers) { ships[id] = this.id(flyer.ship); }
-		for (const { member, ship } of this.level.flyers.values()) {
-			member.send({
-				type: "start", level: levelIndex, difficulty: this.difficulty, ships, spawn: rounded(ship.position), podsTotal: this.level.pods.length,
-			});
-		}
+		for (const flyer of level.flyers.values()) { flyer.member.send(this.startMessage(level, flyer)); }
 	}
 
 	/** Host, after a level: everyone back to the lobby */
@@ -226,19 +265,57 @@ export class Room {
 			if (!finiteList(rocket?.p, 3) || !finiteList(rocket.v, 3) || !finite(rocket.target)) { continue; }
 			const event: GameEvent = ["rocket", t, ...rounded(rocket.p as vec3), ...rounded(rocket.v as vec3), shipId, rocket.target];
 			this.queue.push({ event, except: memberId });
+			ship.rockets = Math.max(0, ship.rockets - 1); /* counted here too, for a player who comes back */
 		}
 		for (const hit of (Array.isArray(hits) ? hits.slice(0, MAX_HITS) : [])) { this.applyHit(memberId, hit); }
 	}
 
-	/** Run the level for the real time elapsed (s) */
-	advance(elapsed: number): void {
+	/**
+	 * Run the level for the real time elapsed (s); members away longer than RECONNECT_GRACE leave
+	 * @returns Whether the room is empty now
+	 */
+	advance(elapsed: number): boolean {
 		this.level?.loop.advance(elapsed);
+		for (const [id, time] of this.away) {
+			if (time + elapsed < RECONNECT_GRACE) {
+				this.away.set(id, time + elapsed);
+			} else if (this.leave(id)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** Simulation time of the level (s) */
 	private get time(): number {
 		const level = this.level;
 		return (level ? round(level.steps * level.loop.step, 3) : 0);
+	}
+
+	/** The host stays while connected; otherwise the first member who is */
+	private pickHost(): void {
+		const present = (id: number) => this.members.some(member => member.id == id) && !this.away.has(id);
+		if (present(this.host)) { return; }
+		this.host = (this.members.find(({ id }) => present(id)) ?? this.members[0]).id;
+	}
+
+	/** The level, for one member: as it starts, or as it is now for one who comes back */
+	private startMessage(level: Level, { ship }: Flyer): StartMessage {
+		const ships: Record<number, number> = {};
+		for (const [id, flyer] of level.flyers) { ships[id] = this.id(flyer.ship); }
+		const q = ship.orientation;
+		return {
+			type: "start",
+			run: level.run,
+			level: level.index,
+			difficulty: level.difficulty,
+			ships,
+			spawn: rounded(ship.position),
+			facing: [round(q[0], 4), round(q[1], 4), round(q[2], 4), round(q[3], 4)] as Quat,
+			rockets: ship.rockets,
+			alive: !ship.dead,
+			podsTotal: level.pods.length,
+		};
 	}
 
 	private broadcastRoom(except?: number): void {
@@ -273,6 +350,7 @@ export class Room {
 		this.members.forEach((member, i) => {
 			const ship = new PlayerShip();
 			ship.position[0] = (i - (this.members.length - 1) / 2) * START_GAP;
+			ship.rockets = ROCKET_CAPACITY; /* as the browsers start */
 			const pilot = new RemotePilot();
 			ship.setPilot(pilot);
 			flyers.set(member.id, { member, ship, pilot });
@@ -293,7 +371,7 @@ export class Room {
 		loop.onStep = () => this.afterStep();
 
 		this.queue = [];
-		return { index, loop, enemies, pods, flyers, steps: 0, outcome: null };
+		return { run: ++this.runs, index, difficulty: this.difficulty, loop, enemies, pods, flyers, steps: 0, outcome: null, result: null };
 	}
 
 	private memberFlying(ship: Entity): number | undefined {
@@ -376,14 +454,14 @@ export class Room {
 
 		if (ended) {
 			this.state = "over";
-			const message: ServerMessage = {
+			const result: OutcomeMessage = level.result = {
 				type: "outcome",
 				outcome: level.outcome!,
 				podsLeft: level.pods.filter(pod => !pod.dead).length,
 				podsTotal: level.pods.length,
-				destroyed: level.enemies.destroyed,
+				destroyed: { ...level.enemies.destroyed },
 			};
-			for (const { member } of level.flyers.values()) { member.send(message); }
+			for (const { member } of level.flyers.values()) { member.send(result); }
 			this.broadcastRoom();
 		}
 	}

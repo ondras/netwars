@@ -1,4 +1,4 @@
-import { mat4, vec3 } from "gl-matrix";
+import { mat4, quat, vec3 } from "gl-matrix";
 import { SoundPlayer } from "./audio/player.ts";
 import { Camera } from "./camera.ts";
 import { DIFFICULTIES, difficulty, difficultyLevel, type DifficultyLevel } from "./difficulty.ts";
@@ -168,14 +168,28 @@ export class Game {
 		this.begin({ level, difficulty: difficultyLevel(), ship, outcome: null, local: { enemies, pods }, online: null });
 	}
 
-	/** An online level the server has started; the server's snapshots go to receive() */
+	/** Which of the room's levels is being played online (StartMessage.run), if one is */
+	get onlineRun(): number | null {
+		return this.session?.online?.run ?? null;
+	}
+
+	/**
+	 * An online level the server has started, or one already under way (after a reload, or a connection
+	 * that came back too late for the level it dropped in); the server's snapshots go to receive()
+	 */
 	startOnline(send: (message: ClientMessage) => void, start: StartMessage, me: number): void {
 		this.stop();
 		this.sounds.unlock();
 		const ship = this.createShip();
 		vec3.set(ship.position, ...start.spawn);
+		quat.set(ship.orientation, ...start.facing);
+		ship.rockets = start.rockets;
 		this.loop.difficulty = DIFFICULTIES[start.difficulty];
-		this.loop.scene.push(ship);
+		if (start.alive) {
+			this.loop.scene.push(ship);
+		} else {
+			ship.dead = true; /* destroyed while away: watch the others */
+		}
 
 		const online = new OnlineSession(this.loop, send, start, me, ship);
 		this.loop.rules = online.rules;

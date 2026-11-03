@@ -2,9 +2,10 @@ import { beforeAll, describe, expect, it } from "vitest";
 import type { Entity } from "../src/entity/entity.ts";
 import type { PlayerShip } from "../src/entity/player-ship.ts";
 import { kindIndex } from "../src/net/kinds.ts";
-import type { ClientMessage, EntityRecord, GameEvent, ServerMessage, Snapshot } from "../src/net/protocol.ts";
+import { RECONNECT_GRACE, type ClientMessage, type EntityRecord, type GameEvent, type ServerMessage, type Snapshot } from "../src/net/protocol.ts";
 import { settle, stubModels } from "../src/testing.ts";
 import { Room, type Member } from "./room.ts";
+import { Rooms } from "./rooms.ts";
 
 beforeAll(stubModels);
 
@@ -14,7 +15,7 @@ interface TestMember extends Member {
 
 function member(id: number): TestMember {
 	const messages: ServerMessage[] = [];
-	return { id, name: `Pilot ${id}`, messages, send: message => { messages.push(message); } };
+	return { id, name: `Pilot ${id}`, token: `token-${id}`, messages, send: message => { messages.push(message); } };
 }
 
 const snapshots = (m: TestMember) => m.messages.filter((message): message is Snapshot => message.type == "snapshot");
@@ -152,5 +153,57 @@ describe("game rooms", () => {
 		expect(room.leave(host.id)).toBe(false);
 		expect(room.host).toBe(2);
 		expect(room.leave(2)).toBe(true);
+	});
+
+	it("keep a dropped player's place: their ship holds course, the host role moves on, and they get the level back as it is", async () => {
+		const { room, host, guest } = await twoPlayers();
+		const half = Math.SQRT1_2; /* turned 90° about y */
+		room.report(host.id, report({
+			ship: { p: [5, 0, 0], q: [0, half, 0, half], v: [0, 0, 0], speed: 0, target: 0, yaw: 1, pitch: 0 },
+			rockets: [{ p: [5, 0, 0], v: [0, 0, -50], target: 999 }],
+		}));
+		room.disconnected(host.id); /* right after that report: it was turning */
+		expect(room.info().players.map(({ away }) => away)).toEqual([true, false]);
+		expect(room.host).toBe(guest.id);
+		run(room, 1);
+		expect(shipOf(room, host.id).engine.yaw.control).toBe(0); /* holding course, not turning on */
+
+		host.messages.length = 0;
+		room.reconnected(host.id);
+		const [welcome, start] = host.messages;
+		expect(welcome).toMatchObject({ type: "welcome", you: host.id, token: "token-1", room: { state: "playing", host: guest.id } });
+		expect(start).toMatchObject({ type: "start", run: 1, rockets: 2, alive: true, podsTotal: 12 });
+		if (start.type != "start") { return; }
+		expect(start.spawn).toEqual([5, 0, 0]);
+		expect(start.facing[1]).toBeCloseTo(half, 3);
+		expect(room.info().players.every(({ away }) => !away)).toBe(true);
+	});
+
+	it("give a player back the outcome of the level that ended while they were away", async () => {
+		const { room, host, guest } = await twoPlayers();
+		room.disconnected(guest.id);
+		shipOf(room, host.id).dead = true;
+		shipOf(room, guest.id).dead = true;
+		run(room, 0.05);
+		expect(room.state).toBe("over");
+
+		guest.messages.length = 0;
+		room.reconnected(guest.id);
+		expect(guest.messages.map(({ type }) => type)).toEqual(["welcome", "outcome"]);
+		expect(guest.messages[1]).toMatchObject({ outcome: "ship-destroyed", podsLeft: 12 });
+	});
+
+	it("let players go once they have been away too long, closing the room when nobody came back", () => {
+		const rooms = new Rooms();
+		const room = rooms.create(member(1), 0, "normal")!;
+		room.join(member(2));
+		room.disconnected(1);
+		room.disconnected(2);
+
+		for (let t = 0; t < RECONNECT_GRACE - 1; t += 0.05) { rooms.advance(0.05); }
+		expect(room.members).toHaveLength(2);
+		for (let t = 0; t < 1.1; t += 0.05) { rooms.advance(0.05); }
+		expect(room.members).toHaveLength(0);
+		expect(rooms.count).toBe(0);
 	});
 });

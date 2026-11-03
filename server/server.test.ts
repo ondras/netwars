@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
-import { NET_PATH, type ClientMessage, type ServerMessage } from "../src/net/protocol.ts";
+import { CLOSE_REPLACED, NET_PATH, type ClientMessage, type ServerMessage } from "../src/net/protocol.ts";
 import { startGameServer, type GameServer } from "./server.ts";
 
 let server: GameServer;
@@ -14,6 +14,8 @@ afterAll(() => server.close());
 /** A browser, as far as the server can tell */
 class Client {
 	readonly messages: ServerMessage[] = [];
+	/** Resolves with the close code once the server closes the connection */
+	readonly closed: Promise<number>;
 	private readonly socket: WebSocket;
 	private waiting: Array<() => void> = [];
 
@@ -23,6 +25,7 @@ class Client {
 			this.messages.push(JSON.parse(String(data)) as ServerMessage);
 			for (const check of this.waiting) { check(); }
 		});
+		this.closed = new Promise(done => socket.once("close", code => done(code)));
 	}
 
 	static open(): Promise<Client> {
@@ -37,11 +40,13 @@ class Client {
 		this.socket.send(JSON.stringify(message));
 	}
 
-	/** The first message of the type, waiting for it if need be */
-	next<T extends ServerMessage["type"]>(type: T, timeout = 2000): Promise<Extract<ServerMessage, { type: T }>> {
+	/** The first message of the type (that passes the test, if given), waiting for it if need be */
+	next<T extends ServerMessage["type"]>(
+		type: T, test: (message: Extract<ServerMessage, { type: T }>) => boolean = () => true, timeout = 2000,
+	): Promise<Extract<ServerMessage, { type: T }>> {
 		return new Promise((done, fail) => {
 			const check = () => {
-				const found = this.messages.find(message => message.type == type);
+				const found = this.messages.find(message => message.type == type && test(message as Extract<ServerMessage, { type: T }>));
 				if (!found) { return false; }
 				done(found as Extract<ServerMessage, { type: T }>);
 				return true;
@@ -77,10 +82,48 @@ describe("game server", () => {
 		const snapshot = await guest.next("snapshot");
 		expect(snapshot.e.length).toBeGreaterThanOrEqual(2 + 12); /* two ships and the pods */
 
-		host.close();
-		guest.close();
+		host.send({ type: "leave" });
+		guest.send({ type: "leave" });
 		await new Promise(done => setTimeout(done, 50));
 		expect(server.rooms.count).toBe(0);
+		host.close();
+		guest.close();
+	});
+
+	it("takes a player whose connection dropped back into their room and level, and closes a connection replaced by a newer one", async () => {
+		const host = await Client.open();
+		const guest = await Client.open();
+		host.send({ type: "create", name: "Ann", level: 0, difficulty: "normal" });
+		const { room } = await host.next("welcome");
+		guest.send({ type: "join", code: room.code, name: "Bo" });
+		const { you, token } = await guest.next("welcome");
+		host.send({ type: "start" });
+		const { run } = await guest.next("start");
+
+		guest.close();
+		await host.next("room", ({ room }) => room.players.some(player => player.id == you && player.away));
+
+		const back = await Client.open();
+		back.send({ type: "resume", token: "not a token" });
+		expect((await back.next("error")).message).toMatch(/place in the room is gone/);
+		back.send({ type: "resume", token });
+		expect(await back.next("welcome")).toMatchObject({ you, token, room: { code: room.code, state: "playing" } });
+		expect(await back.next("start")).toMatchObject({ run, alive: true });
+		await back.next("snapshot");
+		await host.next("room", ({ room }) => room.players.every(player => !player.away));
+
+		/* the same player again, from another tab */
+		const other = await Client.open();
+		other.send({ type: "resume", token });
+		await other.next("welcome");
+		expect(await back.closed).toBe(CLOSE_REPLACED);
+
+		host.send({ type: "leave" });
+		other.send({ type: "leave" });
+		await new Promise(done => setTimeout(done, 50));
+		expect(server.rooms.count).toBe(0);
+		host.close();
+		other.close();
 	});
 
 	it("says so when the room code is wrong, and ignores junk", async () => {

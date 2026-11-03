@@ -117,9 +117,9 @@ export class OnlineMenu {
 		element<HTMLInputElement>("lobby-link").value = inviteLink(room.code);
 		if (firstShow) { element<HTMLButtonElement>("lobby-copy").textContent = "Copy link"; }
 
-		element<HTMLElement>("lobby-players").replaceChildren(...room.players.map(({ id, name }) => {
+		element<HTMLElement>("lobby-players").replaceChildren(...room.players.map(({ id, name, away }) => {
 			const item = document.createElement("li");
-			const tags = [id == room.host ? "host" : "", id == me ? "you" : ""].filter(Boolean);
+			const tags = [id == room.host ? "host" : "", id == me ? "you" : "", away ? "reconnecting…" : ""].filter(Boolean);
 			item.textContent = name + (tags.length ? ` (${tags.join(", ")})` : "");
 			return item;
 		}));

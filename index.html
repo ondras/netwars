@@ -427,6 +427,53 @@
 				text-align: left;
 				opacity: 0.85;
 			}
+
+			#reconnecting {
+				position: fixed;
+				top: 40px;
+				left: 50%;
+				transform: translateX(-50%);
+				z-index: 1;
+				display: flex;
+				align-items: center;
+				gap: 12px;
+				box-sizing: border-box;
+				max-width: calc(100vw - 32px);
+				padding: 8px 10px 8px 16px;
+				background: rgba(0, 0, 0, 0.8);
+				border: 1px solid rgba(255, 200, 90, 0.6);
+				color: rgb(255, 200, 90);
+				font: 14px ui-monospace, monospace;
+			}
+
+			#reconnecting[hidden] {
+				display: none;
+			}
+
+			#reconnecting button {
+				padding: 4px 12px;
+				font: inherit;
+				color: inherit;
+				background: transparent;
+				border: 1px solid currentColor;
+				border-radius: 0;
+				cursor: pointer;
+			}
+
+			#reconnecting button:hover,
+			#reconnecting button:focus-visible {
+				background-color: rgba(255, 200, 90, 0.15);
+			}
+
+			/* in flight the mouse steers: leave from the pause menu (Esc) instead */
+			body.playing #reconnecting {
+				padding-right: 16px;
+				pointer-events: none;
+			}
+
+			body.playing #reconnecting button {
+				display: none;
+			}
 		</style>
 	</head>
 	<body>
@@ -467,6 +514,10 @@
 			<div class="row"><label for="lobby-difficulty">Difficulty</label><select id="lobby-difficulty"></select></div>
 			<p id="lobby-note" class="note"></p>
 			<button id="lobby-start">Start</button><button id="lobby-leave">Leave</button>
+		</div>
+
+		<div id="reconnecting" role="status" hidden>
+			<span>Connection lost. Reconnecting…</span><button id="reconnecting-leave">Leave room</button>
 		</div>
 
 		<div id="result" class="panel" hidden>

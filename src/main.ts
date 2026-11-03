@@ -2,9 +2,9 @@ import { difficultyLevel } from "./difficulty.ts";
 import { Game, type LevelResult } from "./game.ts";
 import { LEVELS } from "./levels.ts";
 import { Menu, type ResultAction } from "./menu.ts";
-import { Connection } from "./net/connection.ts";
+import { Connection, type CloseReason } from "./net/connection.ts";
 import { invitedTo, OnlineMenu } from "./net/online-menu.ts";
-import type { ClientMessage, RoomInfo, ServerMessage } from "./net/protocol.ts";
+import { RECONNECT_GRACE, type ClientMessage, type RoomInfo, type ServerMessage } from "./net/protocol.ts";
 import { Leaderboard, score } from "./scores.ts";
 import { effectsVolume, setEffectsVolume } from "./settings.ts";
 
@@ -87,15 +87,27 @@ game.onOutcome = (result: LevelResult) => {
 
 /* Online play */
 
+/** Where this tab keeps its resume token: a reload goes back into the room; another tab is another pilot */
+const RESUME_KEY = "netwars.resume";
+
 let connection: Connection | null = null;
 /** This player's id in the room, and the room as last heard of */
 let me: number | null = null;
 let room: RoomInfo | null = null;
+/** Takes this player's place in the room back on a new connection; null when not in a room */
+let token: string | null = null;
+/** When the connection to the room dropped (ms); null while connected */
+let lostAt: number | null = null;
+/** A resume was sent: the server answers with a welcome, or an error when the place is gone */
+let resuming = false;
+
+const reconnecting = document.getElementById("reconnecting")!;
+document.getElementById("reconnecting-leave")!.onclick = () => leaveRoom();
 
 const send = (message: ClientMessage) => connection?.send(message);
 
 menu.onOnline = () => online.showJoin(leaderboard.lastName);
-online.onBack = () => backToMenu(menu.selectedLevel);
+online.onBack = () => leaveRoom(); /* not in a room yet, but maybe connected */
 online.onCreate = name => connectThen(name, { type: "create", name, level: menu.selectedLevel, difficulty: difficultyLevel() });
 online.onJoin = (code, name) => connectThen(name, { type: "join", code, name });
 online.onSetup = (level, difficulty) => send({ type: "setup", level, difficulty });
@@ -109,28 +121,108 @@ async function connectThen(name: string, message: ClientMessage): Promise<void> 
 	online.setBusy(true);
 	if (!connection) {
 		try {
-			connection = await Connection.open();
+			attach(await Connection.open());
 		} catch {
 			online.showError("Cannot reach the game server. Is it running?");
 			return;
 		}
-		connection.onMessage = receive;
-		connection.onClose = () => disconnected("Lost the connection to the game server.");
 	}
-	connection.send(message);
+	connection!.send(message);
+}
+
+function attach(opened: Connection): void {
+	connection = opened;
+	opened.onMessage = receive;
+	opened.onClose = lost;
+}
+
+function remember(next: string | null): void {
+	token = next;
+	try {
+		if (next) { sessionStorage.setItem(RESUME_KEY, next); } else { sessionStorage.removeItem(RESUME_KEY); }
+	} catch { /* no storage: a reload starts afresh */ }
+}
+
+function savedToken(): string | null {
+	try {
+		return sessionStorage.getItem(RESUME_KEY);
+	} catch {
+		return null;
+	}
+}
+
+/** The connection ended: in a room, try to get back in; the level (if any) goes on meanwhile */
+function lost(reason: CloseReason): void {
+	connection = null;
+	resuming = false;
+	if (reason == "replaced") {
+		disconnected("You are in this room in another tab now.");
+		return;
+	}
+	if (!token) {
+		disconnected("Lost the connection to the game server.");
+		return;
+	}
+	lostAt ??= performance.now();
+	showReconnecting("Connection lost. Reconnecting…");
+	void reconnect();
+}
+
+/** Tries for RECONNECT_GRACE, the time the server keeps this player's place: at once, then less and less often */
+async function reconnect(): Promise<void> {
+	for (let attempt = 0; ; attempt++) {
+		if (attempt) { await new Promise(done => setTimeout(done, Math.min(5000, 250 * 2 ** attempt))); }
+		if (!token || connection) { return; } /* left the room, or back in already */
+		if (performance.now() - lostAt! > RECONNECT_GRACE * 1000) {
+			disconnected("Lost the connection to the game server.");
+			return;
+		}
+
+		let opened: Connection;
+		try {
+			opened = await Connection.open();
+		} catch {
+			continue;
+		}
+		if (!token || connection) {
+			opened.close();
+			return;
+		}
+		attach(opened);
+		resuming = true;
+		opened.send({ type: "resume", token });
+		return;
+	}
+}
+
+function showReconnecting(text: string): void {
+	reconnecting.querySelector("span")!.textContent = text;
+	reconnecting.hidden = false;
 }
 
 function receive(message: ServerMessage): void {
 	switch (message.type) {
 		case "welcome":
 			me = message.you;
+			remember(message.token);
+			lostAt = null;
+			resuming = false;
+			reconnecting.hidden = true;
 			showRoom(message.room);
 		break;
 
 		case "room": showRoom(message.room); break;
-		case "error": online.showError(message.message); break;
+
+		case "error":
+			if (resuming) {
+				disconnected(message.message);
+			} else {
+				online.showError(message.message);
+			}
+		break;
 
 		case "start":
+			if (game.onlineRun == message.run) { break; } /* back after a dropped connection: the level went on */
 			menu.hideAll();
 			online.hide();
 			document.body.classList.add("playing");
@@ -155,22 +247,29 @@ function showRoom(info: RoomInfo): void {
 
 function leaveRoom(): void {
 	send({ type: "leave" });
-	connection?.close();
-	connection = null;
-	me = null;
-	room = null;
+	forgetRoom();
 	backToMenu(menu.selectedLevel);
 }
 
+/** Out of the room for good (no way back), or never got back in */
 function disconnected(why: string): void {
-	connection = null;
-	me = null;
-	room = null;
+	forgetRoom();
 	game.stop();
 	document.body.classList.remove("playing");
 	menu.hideAll();
 	online.showJoin(leaderboard.lastName);
 	online.showError(why);
+}
+
+function forgetRoom(): void {
+	connection?.close();
+	connection = null;
+	me = null;
+	room = null;
+	remember(null);
+	lostAt = null;
+	resuming = false;
+	reconnecting.hidden = true;
 }
 
 window.addEventListener("keydown", e => {
@@ -191,9 +290,17 @@ window.addEventListener("keydown", e => {
 
 menu.show(0);
 
-/* opened from an invite link: ready to join */
+const saved = savedToken();
 const invite = invitedTo();
-if (invite) {
+if (saved) {
+	/* reloaded while in a room: back into it */
+	token = saved;
+	lostAt = performance.now();
+	menu.hideAll();
+	showReconnecting("Getting back into your room…");
+	void reconnect();
+} else if (invite) {
+	/* opened from an invite link: ready to join */
 	menu.hideAll();
 	online.showJoin(leaderboard.lastName, invite);
 }

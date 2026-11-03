@@ -39,6 +39,8 @@ const rounded = (v: ReadonlyVec3): [number, number, number] => [round(v[0], 2), 
  */
 export class OnlineSession {
 	readonly ship: PlayerShip;
+	/** Which of the room's levels this is (StartMessage.run) */
+	readonly run: number;
 	/** Players' ships: this one and copies of the teammates' */
 	readonly players: Ship[];
 	/** Enemies still to come or present, and pods left, as of the latest snapshot */
@@ -79,6 +81,7 @@ export class OnlineSession {
 		this.send = send;
 		this.clock = clock;
 		this.ship = ship;
+		this.run = start.run;
 		this.players = [ship];
 		this.shipId = start.ships[me];
 		this.pods = this.podsTotal = start.podsTotal;

@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -5,7 +6,7 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { isDifficultyLevel } from "../src/difficulty.ts";
 import { LEVELS } from "../src/levels.ts";
-import { NET_PATH, type ClientMessage, type ServerMessage } from "../src/net/protocol.ts";
+import { CLOSE_REPLACED, HEARTBEAT, NET_PATH, SILENCE_LIMIT, type ClientMessage, type ServerMessage } from "../src/net/protocol.ts";
 import { setModelSource } from "../src/nsh.ts";
 import { cleanName } from "../src/scores.ts";
 import type { Member, Room } from "./room.ts";
@@ -76,34 +77,61 @@ export async function startGameServer({ port, staticDir, modelsDir, tick = 10 }:
 	};
 }
 
-/** One browser: in at most one room at a time */
+/** A browser: in at most one room at a time; its connection may be replaced by a new one (resume) */
+class Client implements Member {
+	readonly id: number;
+	readonly token = randomBytes(18).toString("base64url");
+	name = cleanName("");
+	room: Room | null = null;
+	socket: WebSocket;
+
+	constructor(id: number, socket: WebSocket) {
+		this.id = id;
+		this.socket = socket;
+	}
+
+	send(message: ServerMessage): void {
+		if (this.socket.readyState == WebSocket.OPEN) { this.socket.send(JSON.stringify(message)); }
+	}
+}
+
+const PING = JSON.stringify({ type: "ping" } satisfies ServerMessage);
+
+/** One connection: a new client, or one taking its place back after its previous connection dropped */
 function connect(socket: WebSocket, rooms: Rooms): void {
-	const member: Member = {
-		id: rooms.newMemberId(),
-		name: cleanName(""),
-		send(message: ServerMessage) {
-			if (socket.readyState == WebSocket.OPEN) { socket.send(JSON.stringify(message)); }
-		},
-	};
-	let room: Room | null = null;
-	const error = (message: string) => member.send({ type: "error", message });
+	let client = new Client(rooms.newMemberId(), socket);
+	const error = (message: string) => client.send({ type: "error", message });
 	const leave = () => {
-		if (room) { rooms.leave(room, member.id); }
-		room = null;
+		if (client.room) { rooms.leave(client.room, client.id); }
+		client.room = null;
 	};
 
+	/* a connection can die without closing (a network that went away): silence tells */
+	let heard = performance.now();
+	const heartbeat = setInterval(() => {
+		if (performance.now() - heard > SILENCE_LIMIT * 1000) {
+			socket.terminate();
+			return;
+		}
+		socket.ping(); /* browsers answer these by themselves */
+		if (socket.readyState == WebSocket.OPEN) { socket.send(PING); } /* for the browser's own check */
+	}, HEARTBEAT * 1000);
+	socket.on("pong", () => { heard = performance.now(); });
+
 	socket.on("message", (data: RawData) => {
+		heard = performance.now();
 		const message = parse(data);
 		if (!message) { return; }
+		const room = client.room;
 
 		switch (message.type) {
 			case "create": {
 				if (!validLevel(message.level) || !isDifficultyLevel(String(message.difficulty))) { return error("Unknown level or difficulty."); }
 				leave();
-				member.name = cleanName(String(message.name ?? ""));
-				room = rooms.create(member, message.level, message.difficulty);
-				if (!room) { return error("The server is full. Try again later."); }
-				member.send({ type: "welcome", you: member.id, room: room.info() });
+				client.name = cleanName(String(message.name ?? ""));
+				client.room = rooms.create(client, message.level, message.difficulty);
+				if (!client.room) { return error("The server is full. Try again later."); }
+				client.room.welcome(client);
 			} break;
 
 			case "join": {
@@ -111,33 +139,53 @@ function connect(socket: WebSocket, rooms: Rooms): void {
 				if (!found) { return error(`No room with the code ${String(message.code ?? "").trim().toUpperCase()}.`); }
 				if (found == room) { return; }
 				leave();
-				member.name = cleanName(String(message.name ?? ""));
-				const refused = found.join(member);
+				client.name = cleanName(String(message.name ?? ""));
+				const refused = found.join(client);
 				if (refused) { return error(refused); }
-				room = found;
+				client.room = found;
 			} break;
 
-			case "name": room?.rename(member.id, String(message.name ?? "")); break;
+			case "resume": {
+				if (room) { return; }
+				const found = rooms.findMember(String(message.token ?? ""));
+				if (!found) { return error("Your place in the room is gone: the room closed, or you were away too long."); }
+				/* every member is a Client: this server creates them all */
+				const back = found.member as Client;
+				const previous = back.socket;
+				back.socket = socket;
+				client = back;
+				/* the old connection may still be open: another tab, or a drop the server has not noticed yet */
+				if (previous != socket) { previous.close(CLOSE_REPLACED, "Taken over by another connection"); }
+				found.room.reconnected(back.id);
+			} break;
+
+			case "name": room?.rename(client.id, String(message.name ?? "")); break;
 
 			case "setup":
 				if (validLevel(message.level) && isDifficultyLevel(String(message.difficulty))) {
-					room?.setup(member.id, message.level, message.difficulty);
+					room?.setup(client.id, message.level, message.difficulty);
 				}
 			break;
 
-			case "start": room?.start(member.id, validLevel(message.level) ? message.level : undefined); break;
-			case "lobby": room?.toLobby(member.id); break;
-			case "state": room?.report(member.id, message); break;
+			case "start": room?.start(client.id, validLevel(message.level) ? message.level : undefined); break;
+			case "lobby": room?.toLobby(client.id); break;
+			case "state": room?.report(client.id, message); break;
 			case "leave": leave(); break;
 		}
 	});
-	socket.on("close", leave);
-	socket.on("error", leave);
+
+	/* the client keeps its place for a while, unless it already took it back on a newer connection */
+	const dropped = () => {
+		clearInterval(heartbeat);
+		if (client.socket == socket) { client.room?.disconnected(client.id); }
+	};
+	socket.on("close", dropped);
+	socket.on("error", dropped);
 }
 
 const validLevel = (level: unknown): level is number => Number.isInteger(level) && Boolean(LEVELS[level as number]);
 
-const MESSAGE_TYPES = new Set<ClientMessage["type"]>(["create", "join", "name", "setup", "start", "lobby", "state", "leave"]);
+const MESSAGE_TYPES = new Set<ClientMessage["type"]>(["create", "join", "name", "setup", "start", "lobby", "state", "leave", "resume"]);
 
 /** A message's shape is checked further where its fields are used */
 function parse(data: RawData): ClientMessage | null {

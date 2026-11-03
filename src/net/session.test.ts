@@ -25,7 +25,10 @@ function setup() {
 	const ship = new PlayerShip();
 	loop.players.push(ship);
 	loop.scene.push(ship);
-	const start: StartMessage = { type: "start", level: 0, difficulty: "normal", ships: { [ME]: MY_SHIP, 2: TEAMMATE }, spawn: [0, 0, 0], podsTotal: 3 };
+	const start: StartMessage = {
+		type: "start", run: 1, level: 0, difficulty: "normal", ships: { [ME]: MY_SHIP, 2: TEAMMATE },
+		spawn: [0, 0, 0], facing: [0, 0, 0, 1], rockets: 3, alive: true, podsTotal: 3,
+	};
 	const session = new OnlineSession(loop, message => sent.push(message), start, ME, ship, () => clock.now);
 	loop.rules = session.rules;
 	loop.onStep = () => session.step(loop.step);

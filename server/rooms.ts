@@ -35,13 +35,25 @@ export class Rooms {
 		return this.rooms.get(code.trim().toUpperCase()) ?? null;
 	}
 
+	/** The member with this resume token, and their room */
+	findMember(token: string): { room: Room; member: Member } | null {
+		if (!token) { return null; }
+		for (const room of this.rooms.values()) {
+			const member = room.members.find(m => m.token == token);
+			if (member) { return { room, member }; }
+		}
+		return null;
+	}
+
 	/** Take the member out of the room, closing it when they were the last one */
 	leave(room: Room, memberId: number): void {
 		if (room.leave(memberId)) { this.rooms.delete(room.code); }
 	}
 
-	/** Run every room's level for the real time elapsed (s) */
+	/** Run every room's level for the real time elapsed (s); rooms everyone left for good close */
 	advance(elapsed: number): void {
-		for (const room of this.rooms.values()) { room.advance(elapsed); }
+		for (const room of this.rooms.values()) {
+			if (room.advance(elapsed)) { this.rooms.delete(room.code); }
+		}
 	}
 }

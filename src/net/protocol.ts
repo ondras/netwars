@@ -21,6 +21,14 @@ export const STATE_RATE = 30;
 export const SNAPSHOT_STEPS = 3;
 /** Most shield damage a single reported hit may do: a rocket's */
 export const MAX_HIT_DAMAGE = 50;
+/** How long a player whose connection dropped keeps their place in the room (s); their ship holds course meanwhile */
+export const RECONNECT_GRACE = 30;
+/** The server sends something at least this often (s), so that browsers can tell a dead connection */
+export const HEARTBEAT = 1;
+/** A connection silent for this long (s) is taken for dead, at either end */
+export const SILENCE_LIMIT = 5;
+/** WebSocket close code: the same player came back on another connection (another tab) */
+export const CLOSE_REPLACED = 4000;
 
 export type Vec3 = [number, number, number];
 export type Quat = [number, number, number, number];
@@ -28,6 +36,8 @@ export type Quat = [number, number, number, number];
 export interface PlayerInfo {
 	id: number;
 	name: string;
+	/** Their connection dropped; they may come back within RECONNECT_GRACE */
+	away: boolean;
 }
 
 export type RoomState = "lobby" | "playing" | "over";
@@ -86,7 +96,9 @@ export type ClientMessage =
 	| { type: "lobby" }
 	/** About STATE_RATE times a second while flying */
 	| { type: "state"; ship: ShipState; shots: ShotReport[]; rockets: RocketReport[]; hits: HitReport[] }
-	| { type: "leave" };
+	| { type: "leave" }
+	/** On a new connection, after the old one dropped or the page was reloaded: take my place in my room back */
+	| { type: "resume"; token: string };
 
 /* Entities sent in snapshots, by kind */
 export const ENTITY_KINDS = [
@@ -130,14 +142,20 @@ export interface Snapshot {
 	shields: number;
 }
 
+/** A level started; sent again, as it is now, to a player who comes back while it goes on */
 export interface StartMessage {
 	type: "start";
+	/** Counts the room's levels: tells a level that went on while the connection was down from a new one */
+	run: number;
 	level: number;
 	difficulty: DifficultyLevel;
 	/** Player id → id of their ship's entity */
 	ships: Record<number, number>;
-	/** Where your ship starts */
+	/** Your ship: where it is, which way it faces, rockets left; not alive when it was destroyed */
 	spawn: Vec3;
+	facing: Quat;
+	rockets: number;
+	alive: boolean;
 	podsTotal: number;
 }
 
@@ -150,14 +168,16 @@ export interface OutcomeMessage {
 }
 
 export type ServerMessage =
-	/** You are in a room now */
-	| { type: "welcome"; you: number; room: RoomInfo }
+	/** You are in a room now (again, after a resume); the token is for resuming */
+	| { type: "welcome"; you: number; room: RoomInfo; token: string }
 	/** The room changed: players, settings or state */
 	| { type: "room"; room: RoomInfo }
 	| { type: "error"; message: string }
 	| StartMessage
 	| Snapshot
-	| OutcomeMessage;
+	| OutcomeMessage
+	/** Every HEARTBEAT: the connection is alive */
+	| { type: "ping" };
 
 /** Rounded for sending: centimetres and four decimals are plenty */
 export const round = (value: number, digits: number): number => {
