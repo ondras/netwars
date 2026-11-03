@@ -1,0 +1,5 @@
+# SITE_ADDRESS (compose.yaml): ":80" serves plain HTTP; a domain name serves HTTPS with a certificate Caddy gets itself
+{$SITE_ADDRESS}
+
+encode zstd gzip
+reverse_proxy game:8787
