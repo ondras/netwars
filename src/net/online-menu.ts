@@ -18,7 +18,7 @@ export function invitedTo(): string | null {
 	return (code.length == CODE_LENGTH ? code : null);
 }
 
-/** The "Play online" panel (create a room or join one by code) and the room's lobby (markup in index.html) */
+/** The multiplayer panel (create a room or join one by code) and the room's lobby (markup in index.html) */
 export class OnlineMenu {
 	onCreate: ((name: string) => void) | null = null;
 	onJoin: ((code: string, name: string) => void) | null = null;
@@ -29,6 +29,7 @@ export class OnlineMenu {
 	onLeave: (() => void) | null = null;
 
 	private readonly panel = element<HTMLElement>("online");
+	private readonly backButton = element<HTMLButtonElement>("online-back");
 	private readonly lobby = element<HTMLElement>("lobby");
 	private readonly nameInput = element<HTMLInputElement>("online-name");
 	private readonly codeInput = element<HTMLInputElement>("online-code");
@@ -52,7 +53,7 @@ export class OnlineMenu {
 			this.onJoin?.(code, this.nameInput.value);
 		};
 		this.codeInput.oninput = () => { this.codeInput.value = this.codeInput.value.toUpperCase(); };
-		element<HTMLButtonElement>("online-back").onclick = () => this.onBack?.();
+		this.backButton.onclick = () => this.onBack?.();
 
 		levels.forEach((level, i) => this.levelSelect.append(new Option(`${i + 1}. ${level.name}`, String(i))));
 		for (const [value, { label }] of Object.entries(DIFFICULTIES)) { this.difficultySelect.append(new Option(label, value)); }
@@ -81,6 +82,11 @@ export class OnlineMenu {
 
 	get lobbyVisible(): boolean {
 		return !this.lobby.hidden;
+	}
+
+	/** Esc: the panel's Back button, if the panel is open and not busy connecting */
+	back(): void {
+		if (!this.panel.hidden && !this.backButton.disabled) { this.onBack?.(); }
 	}
 
 	/** The panel for creating or joining a room; with a code (from an invite link) ready to join */

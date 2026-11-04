@@ -479,19 +479,30 @@
 	<body>
 		<div id="game"></div>
 
-		<div id="menu" class="panel">
+		<div id="title-screen" class="panel">
 			<h1>NETWARS</h1>
-			<div class="row"><label for="level">Level</label><select id="level"></select></div>
-			<p id="level-description"></p>
-			<div class="row"><label for="difficulty">Difficulty</label><select id="difficulty"></select></div>
-			<button id="start">Start</button><button id="menu-online">Play online</button><br><button id="menu-settings">Settings</button><button id="menu-help">Help</button>
-			<h3 id="menu-board-title">Best scores</h3>
-			<table id="menu-board" class="board"></table>
+			<div class="stack">
+				<button id="title-single">Single player</button>
+				<button id="title-multi">Multiplayer</button>
+				<button id="title-settings">Settings</button>
+				<button id="title-help">Help</button>
+			</div>
 			<p class="help">Mouse: steer · Button: fire<br>W / S: speed up / down · Esc: pause<br>Keep an enemy ahead to lock on, then<br>Enter / Space: launch a rocket</p>
 		</div>
 
+		<div id="single-player" class="panel" hidden>
+			<h2>Single player</h2>
+			<div class="row"><label for="level">Level</label><select id="level"></select></div>
+			<p id="level-description"></p>
+			<div class="row"><label for="difficulty">Difficulty</label><select id="difficulty"></select></div>
+			<button id="start">Start</button><button id="single-back">Back</button>
+			<h3 id="single-board-title">Best scores</h3>
+			<table id="single-board" class="board"></table>
+			<p class="help">Esc: back</p>
+		</div>
+
 		<div id="online" class="panel" hidden>
-			<h2>Play online</h2>
+			<h2>Multiplayer</h2>
 			<p class="lead">Co-op for up to 4 pilots: guard the pods together.</p>
 			<div class="row"><label for="online-name">Your name</label><input id="online-name" maxlength="16" autocomplete="nickname" spellcheck="false"></div>
 			<button id="online-create">Create a room</button>
@@ -502,6 +513,7 @@
 			</form>
 			<p id="online-error" class="error" role="alert" hidden></p>
 			<button id="online-back">Back</button>
+			<p class="help">Esc: back</p>
 		</div>
 
 		<div id="lobby" class="panel" hidden>

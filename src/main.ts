@@ -19,11 +19,11 @@ function play(level: number): void {
 	game.start(level);
 }
 
-function backToMenu(level: number): void {
+/** From a level played alone, to the screen for picking the next one */
+function backToLevels(level: number): void {
 	game.stop();
 	document.body.classList.remove("playing");
-	online.hide();
-	menu.show(level);
+	menu.showSinglePlayer(level);
 }
 
 function pause(): void {
@@ -40,7 +40,7 @@ function resume(): void {
 
 menu.onStart = play;
 menu.onResume = resume;
-menu.onLeave = () => (game.online ? leaveRoom() : backToMenu(game.level ?? 0));
+menu.onLeave = () => (game.online ? leaveRoom() : backToLevels(game.level ?? 0));
 menu.onVolume = volume => {
 	setEffectsVolume(volume);
 	game.setEffectsVolume(volume);
@@ -78,7 +78,7 @@ game.onOutcome = (result: LevelResult) => {
 		return;
 	}
 
-	const toMenu: ResultAction = { label: "Menu", action: () => backToMenu(level) };
+	const toMenu: ResultAction = { label: "Menu", action: () => backToLevels(level) };
 	const proceed: ResultAction = (outcome == "won"
 		? (next < LEVELS.length ? { label: "Next level", action: () => play(next) } : { label: "Play again", action: () => play(0) })
 		: { label: "Retry", action: () => play(level) });
@@ -106,8 +106,12 @@ document.getElementById("reconnecting-leave")!.onclick = () => leaveRoom();
 
 const send = (message: ClientMessage) => connection?.send(message);
 
-menu.onOnline = () => online.showJoin(leaderboard.lastName);
-online.onBack = () => leaveRoom(); /* not in a room yet, but maybe connected */
+menu.onMultiplayer = () => online.showJoin(leaderboard.lastName);
+online.onBack = () => {
+	forgetRoom(); /* not in a room, but maybe connected */
+	online.hide();
+	menu.showTitle();
+};
 online.onCreate = name => connectThen(name, { type: "create", name, level: menu.selectedLevel, difficulty: difficultyLevel() });
 online.onJoin = (code, name) => connectThen(name, { type: "join", code, name });
 online.onSetup = (level, difficulty) => send({ type: "setup", level, difficulty });
@@ -247,18 +251,22 @@ function showRoom(info: RoomInfo): void {
 
 function leaveRoom(): void {
 	send({ type: "leave" });
-	forgetRoom();
-	backToMenu(menu.selectedLevel);
+	toMultiplayer();
 }
 
 /** Out of the room for good (no way back), or never got back in */
 function disconnected(why: string): void {
+	toMultiplayer();
+	online.showError(why);
+}
+
+/** Out of any room, to the screen for creating or joining one */
+function toMultiplayer(): void {
 	forgetRoom();
 	game.stop();
 	document.body.classList.remove("playing");
 	menu.hideAll();
 	online.showJoin(leaderboard.lastName);
-	online.showError(why);
 }
 
 function forgetRoom(): void {
@@ -281,14 +289,18 @@ window.addEventListener("keydown", e => {
 		} else if (game.playing) {
 			pause();
 		} else if (game.level !== null && !game.online) { /* level over: leave the result panel */
-			backToMenu(game.level);
+			backToLevels(game.level);
+		} else if (menu.singlePlayerVisible) {
+			menu.showTitle();
+		} else {
+			online.back();
 		}
 	}
 
-	if (e.key == "Enter" && menu.visible && !(document.activeElement instanceof HTMLButtonElement)) { menu.start(); }
+	if (e.key == "Enter" && menu.singlePlayerVisible && !(document.activeElement instanceof HTMLButtonElement)) { menu.start(); }
 });
 
-menu.show(0);
+menu.showTitle();
 
 const saved = savedToken();
 const invite = invitedTo();

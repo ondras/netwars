@@ -60,21 +60,22 @@ function renderScore(table: HTMLTableElement, { lines, total }: Score): void {
 	);
 }
 
-/** The main menu, the end-of-level, pause and settings panels (markup in index.html) */
+/** The title screen, the single-player screen, the end-of-level, pause and settings panels (markup in index.html) */
 export class Menu {
 	/** Called with the chosen level index */
 	onStart: ((level: number) => void) | null = null;
-	/** "Play online" pressed */
-	onOnline: (() => void) | null = null;
+	/** "Multiplayer" pressed */
+	onMultiplayer: (() => void) | null = null;
 	onResume: (() => void) | null = null;
-	/** Leave the paused level for the main menu */
+	/** Leave the paused level */
 	onLeave: (() => void) | null = null;
 	/** The effects volume slider moves (0..1) */
 	onVolume: ((volume: number) => void) | null = null;
 	/** The effects volume slider is let go */
 	onVolumeSet: (() => void) | null = null;
 
-	private readonly menu = element<HTMLElement>("menu");
+	private readonly titleScreen = element<HTMLElement>("title-screen");
+	private readonly singlePlayer = element<HTMLElement>("single-player");
 	private readonly levelSelect = element<HTMLSelectElement>("level");
 	private readonly levelDescription = element<HTMLElement>("level-description");
 	private readonly difficultySelect = element<HTMLSelectElement>("difficulty");
@@ -102,13 +103,15 @@ export class Menu {
 			if (isDifficultyLevel(this.difficultySelect.value)) { setDifficulty(this.difficultySelect.value); }
 		};
 
-		element<HTMLButtonElement>("start").onclick = () => this.start();
-		element<HTMLButtonElement>("menu-online").onclick = () => {
-			this.menu.hidden = true;
-			this.onOnline?.();
+		element<HTMLButtonElement>("title-single").onclick = () => this.showSinglePlayer();
+		element<HTMLButtonElement>("title-multi").onclick = () => {
+			this.titleScreen.hidden = true;
+			this.onMultiplayer?.();
 		};
+		element<HTMLButtonElement>("start").onclick = () => this.start();
+		element<HTMLButtonElement>("single-back").onclick = () => this.showTitle();
 		const volumeSlider = element<HTMLInputElement>("effects-volume");
-		element<HTMLButtonElement>("menu-settings").onclick = () => this.openModal(this.settings, this.menu, volumeSlider);
+		element<HTMLButtonElement>("title-settings").onclick = () => this.openModal(this.settings, this.titleScreen, volumeSlider);
 		element<HTMLButtonElement>("pause-settings").onclick = () => this.openModal(this.settings, this.pause, volumeSlider);
 		element<HTMLButtonElement>("settings-back").onclick = () => this.closeModal();
 
@@ -122,7 +125,7 @@ export class Menu {
 		}
 
 		element<HTMLElement>("help-content").innerHTML = helpMarkup();
-		element<HTMLButtonElement>("menu-help").onclick = () => this.openModal(this.help, this.menu, this.help); /* the panel, not its button at the bottom, so it opens scrolled to the top */
+		element<HTMLButtonElement>("title-help").onclick = () => this.openModal(this.help, this.titleScreen, this.help); /* the panel, not its button at the bottom, so it opens scrolled to the top */
 		element<HTMLButtonElement>("help-back").onclick = () => this.closeModal();
 		element<HTMLButtonElement>("resume").onclick = () => this.onResume?.();
 		element<HTMLButtonElement>("leave").onclick = () => this.onLeave?.();
@@ -138,18 +141,19 @@ export class Menu {
 		slider.onchange = () => this.onVolumeSet?.();
 	}
 
-	get visible(): boolean {
-		return !this.menu.hidden;
+	get singlePlayerVisible(): boolean {
+		return !this.singlePlayer.hidden;
 	}
 
-	/** Level picked in the main menu */
+	/** Level last picked on the single-player screen */
 	get selectedLevel(): number {
 		return Number(this.levelSelect.value);
 	}
 
 	/** Hide every panel of this menu */
 	hideAll(): void {
-		this.menu.hidden = true;
+		this.titleScreen.hidden = true;
+		this.singlePlayer.hidden = true;
 		this.hideResult();
 		this.pause.hidden = true;
 		this.dropModal();
@@ -181,18 +185,23 @@ export class Menu {
 		(modal.from.querySelector("button") as HTMLButtonElement | null)?.focus();
 	}
 
-	show(level: number): void {
-		this.hideResult();
-		this.pause.hidden = true;
-		this.dropModal();
+	showTitle(): void {
+		this.hideAll();
+		this.titleScreen.hidden = false;
+		element<HTMLButtonElement>("title-single").focus();
+	}
+
+	/** Levels, difficulty and best scores, with the given level picked */
+	showSinglePlayer(level = this.selectedLevel): void {
+		this.hideAll();
 		this.levelSelect.value = String(level);
 		this.describeLevel();
-		this.menu.hidden = false;
+		this.singlePlayer.hidden = false;
 		element<HTMLButtonElement>("start").focus();
 	}
 
 	start(): void {
-		this.menu.hidden = true;
+		this.singlePlayer.hidden = true;
 		(document.activeElement as HTMLElement | null)?.blur(); /* give the keyboard back to the game */
 		this.onStart?.(Number(this.levelSelect.value));
 	}
@@ -279,7 +288,7 @@ export class Menu {
 		this.levelDescription.textContent = level?.description ?? "";
 		if (!level) { return; }
 
-		element<HTMLElement>("menu-board-title").textContent = `Best scores · ${level.name}`;
-		renderBoard(element<HTMLTableElement>("menu-board"), this.leaderboard.entries(level.name));
+		element<HTMLElement>("single-board-title").textContent = `Best scores · ${level.name}`;
+		renderBoard(element<HTMLTableElement>("single-board"), this.leaderboard.entries(level.name));
 	}
 }
