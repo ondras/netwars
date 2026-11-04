@@ -5,13 +5,14 @@ import type { Entity } from "../entity/entity.ts";
 import { Missile } from "../entity/missile.ts";
 import { PlayerShip } from "../entity/player-ship.ts";
 import { applyPowerup } from "../entity/powerup.ts";
-import { ROCKET, Ship } from "../entity/ship.ts";
+import { Ship } from "../entity/ship.ts";
 import { Shot } from "../entity/shot.ts";
 import type { Loop, Rules } from "../loop.ts";
 import { applyExtra, createCopy } from "./kinds.ts";
 import {
 	ENTITY_KINDS, round, STATE_RATE,
-	type ClientMessage, type EntityRecord, type GameEvent, type HitReport, type RocketReport, type ShotReport, type Snapshot, type StartMessage,
+	type ClientMessage, type EntityRecord, type GameEvent, type HitReport, type MatchState, type RocketReport, type ShotReport, type Snapshot,
+	type StartMessage,
 } from "./protocol.ts";
 
 /**
@@ -22,7 +23,7 @@ export const INTERPOLATION_DELAY = 0.1;
 /** Snapshots kept waiting at most; older ones are applied at once (the clock estimate was off) */
 const MAX_WAITING = 20;
 
-type TimedEvent = Extract<GameEvent, ["shot", ...unknown[]] | ["rocket", ...unknown[]]>;
+type TimedEvent = Extract<GameEvent, ["shot", ...unknown[]]>;
 
 interface Received {
 	readonly snapshot: Snapshot;
@@ -36,22 +37,30 @@ const rounded = (v: ReadonlyVec3): [number, number, number] => [round(v[0], 2), 
  * A level played online, as one browser sees it. The server's entities appear as copies
  * (createCopy), placed between snapshots INTERPOLATION_DELAY in the past; the player's own ship flies here,
  * at once, and its position, shots, rockets and hits go to the server about STATE_RATE times a second.
+ * In a world that wraps around, everything is kept at its copy nearest this ship, so that whatever deals with
+ * the scene here (drawing, radar, lock-on, hits, bumps) sees it as if there was no edge.
  */
 export class OnlineSession {
 	readonly ship: PlayerShip;
 	/** Which of the room's levels this is (StartMessage.run) */
 	readonly run: number;
+	/** Deathmatch: where it is fought and what ends it; null in co-op */
+	readonly arena: StartMessage["arena"];
 	/** Players' ships: this one and copies of the teammates' */
 	readonly players: Ship[];
 	/** Enemies still to come or present, and pods left, as of the latest snapshot */
 	enemies = 0;
 	pods: number;
 	readonly podsTotal: number;
+	/** Deathmatch: time left and frags, as of the latest snapshot */
+	match: MatchState | null = null;
+	/** Deathmatch: someone destroyed someone (player ids) */
+	onFrag: ((killer: number, victim: number) => void) | null = null;
 
 	private readonly loop: Loop;
 	private readonly send: (message: ClientMessage) => void;
 	private readonly clock: () => number;
-	private readonly shipId: number;
+	private shipId: number;
 	private readonly copies = new Map<number, Entity>();
 	private readonly idOf = new WeakMap<Entity, number>();
 	/** Ids of entities that blew up: never shown again, even if an older snapshot still has them */
@@ -61,12 +70,17 @@ export class OnlineSession {
 	private readonly timeline: TimedEvent[] = [];
 	/** Server time minus local time (s), estimated from the snapshots' arrival */
 	private offset: number | null = null;
+	/** The server time being shown (s) */
+	private viewTime = 0;
 	private sinceReport = 0;
 	private shots: ShotReport[] = [];
 	private rockets: RocketReport[] = [];
 	private hits: HitReport[] = [];
 	/** This ship's shots and rockets already reported */
 	private readonly reported = new WeakSet<Entity>();
+	private shotsFired = 0;
+	/** This ship's shots → ShotReport.n */
+	private readonly shotNumbers = new WeakMap<Entity, number>();
 	/** Shown only: other ships' shots and rockets, whose hits the server decides */
 	private readonly cosmetic = new WeakSet<Entity>();
 
@@ -82,6 +96,7 @@ export class OnlineSession {
 		this.clock = clock;
 		this.ship = ship;
 		this.run = start.run;
+		this.arena = start.arena;
 		this.players = [ship];
 		this.shipId = start.ships[me];
 		this.pods = this.podsTotal = start.podsTotal;
@@ -95,7 +110,7 @@ export class OnlineSession {
 			if (!target) { continue; }
 
 			shot.dead = true;
-			if (shot.owner == this.ship && !this.cosmetic.has(shot)) { this.hit(shot, target); }
+			if (shot.owner == this.ship && !this.cosmetic.has(shot) && !(shot instanceof Missile)) { this.hit(shot, target); }
 		}
 
 		/* only this ship is moved here; the others bump on their own screens or on the server */
@@ -111,9 +126,11 @@ export class OnlineSession {
 			this.offset += (sample - this.offset) * (sample > this.offset ? 0.5 : 0.05);
 		}
 
-		this.waiting.push({ snapshot, byId: new Map(snapshot.e.map(record => [record[0], record])) });
+		const byId = new Map(snapshot.e.map(record => [record[0], record]));
+		this.waiting.push({ snapshot, byId });
 		this.enemies = snapshot.enemies;
 		this.pods = snapshot.pods;
+		this.match = snapshot.match ?? null;
 		if (!this.ship.dead) { this.ship.shields.value = snapshot.shields; }
 
 		for (const event of snapshot.ev) {
@@ -121,30 +138,36 @@ export class OnlineSession {
 				/* heard and seen as they arrive: they need no place on the timeline */
 				case "sound": {
 					const [, , name, ...at] = event;
-					this.loop.sound(name, at.length ? vec(at[0]!, at[1]!, at[2]!) : undefined);
+					this.loop.sound(name, at.length ? this.nearby(vec(at[0]!, at[1]!, at[2]!)) : undefined);
 				} break;
 
 				case "explode": this.blowUp(event[2]); break;
 				case "powerup": applyPowerup(event[2], this.ship); break;
+				case "frag": this.onFrag?.(event[2], event[3]); break;
 				default: this.timeline.push(event);
 			}
 		}
+
+		this.followOwnShip(snapshot.ship, byId);
 	}
 
 	/** Call after every simulation step */
 	step(dt: number): void {
 		if (this.offset !== null) {
-			const time = this.clock() + this.offset - INTERPOLATION_DELAY;
+			/* the step's own moment: shots keep pace with what is shown, however few frames a second this computer manages */
+			const time = this.clock() - this.loop.stepsLeft * dt + this.offset - INTERPOLATION_DELAY;
 			while (this.waiting.length && (this.waiting[0].snapshot.t <= time || this.waiting.length > MAX_WAITING)) {
 				this.apply(this.waiting.shift()!);
 			}
 			while (this.timeline.length && this.timeline[0][1] <= time) { this.show(this.timeline.shift()!); }
 			this.place(time);
+			this.viewTime = time;
 		}
+		this.keepNearby();
 
 		this.collectOwnShots();
 		this.sinceReport += dt;
-		if (this.sinceReport >= 1 / STATE_RATE && !this.ship.dead) {
+		if (this.sinceReport >= 1 / STATE_RATE) {
 			this.sinceReport = 0;
 			this.report();
 		}
@@ -155,12 +178,45 @@ export class OnlineSession {
 		return this.players.filter(ship => ship != this.ship && !ship.dead);
 	}
 
+	/** The copy of a point nearest this ship */
+	private nearby(point: vec3): vec3 {
+		return vec3.clone(this.loop.nearest(point, this.ship.position));
+	}
+
+	/** Everything to its copy nearest this ship; those farther than half the world on an axis go to the other side */
+	private keepNearby(): void {
+		if (this.loop.size === null) { return; }
+		const offset = vec3.create();
+		for (const entity of this.loop.scene) {
+			if (entity == this.ship) { continue; }
+			vec3.subtract(offset, this.loop.nearest(entity.position, this.ship.position), entity.position);
+			if (offset[0] || offset[1] || offset[2]) { entity.shift(offset); }
+		}
+	}
+
+	/** Which ship is ours now, as the server sees it: it can be gone (even if we missed that), or new and somewhere else */
+	private followOwnShip(id: number, byId: ReadonlyMap<number, EntityRecord>): void {
+		const record = byId.get(id);
+		if (!record) {
+			if (!this.ship.dead) { this.blowUp(this.shipId); }
+			return;
+		}
+		if (id == this.shipId) { return; }
+
+		this.gone.add(this.shipId);
+		this.shipId = id;
+		this.ship.revive();
+		this.setFrom(this.ship, record);
+		if (!this.loop.scene.includes(this.ship)) { this.loop.spawn(this.ship); }
+	}
+
 	/** Copies of what the snapshot has, created as entities first appear; the rest disappear */
 	private apply(received: Received): void {
 		for (const record of received.snapshot.e) {
 			const [id, kind] = record;
 			if (id == this.shipId || this.gone.has(id) || this.copies.has(id) || !ENTITY_KINDS[kind]) { continue; }
 			const copy = createCopy(ENTITY_KINDS[kind]);
+			if (ENTITY_KINDS[kind] == "rocket" && !this.arena) { copy.hittable = false; } /* co-op: no friendly fire */
 			this.copies.set(id, copy);
 			this.idOf.set(copy, id);
 			if (copy instanceof PlayerShip) { this.players.push(copy); }
@@ -223,28 +279,13 @@ export class OnlineSession {
 		this.forget(id, copy);
 	}
 
-	/** A shot or rocket fired by someone else, shown along with its sound */
-	private show(event: TimedEvent): void {
-		if (event[0] == "shot") {
-			const [, , x, y, z, vx, vy, vz, color, lifetime, owner, players] = event;
-			const shot = new Shot(vec(x, y, z), vec(vx, vy, vz), this.copies.get(owner) ?? null, lifetime, 0, color);
-			if (players) { shot.hitOnly = this.players; }
-			this.cosmetic.add(shot);
-			this.loop.spawn(shot);
-			this.loop.sound("cannon", shot.position);
-			return;
-		}
-
-		const [, , x, y, z, vx, vy, vz, owner, targetId] = event;
-		const shooter = this.copies.get(owner);
-		const target = this.copies.get(targetId);
-		if (!shooter || !target) { return; }
-		const velocity = vec(vx, vy, vz);
-		const rocket = new Missile(vec(x, y, z), vec3.normalize(vec3.create(), velocity), shooter, target, { ...ROCKET, damage: 0 });
-		vec3.copy(rocket.velocity, velocity);
-		this.cosmetic.add(rocket);
-		this.loop.spawn(rocket);
-		this.loop.sound("launch", rocket.position);
+	/** A shot fired by someone else, shown along with its sound */
+	private show([, , x, y, z, vx, vy, vz, color, lifetime, owner, players]: TimedEvent): void {
+		const shot = new Shot(this.nearby(vec(x, y, z)), vec(vx, vy, vz), this.copies.get(owner) ?? null, lifetime, 0, color);
+		if (players) { shot.hitOnly = this.players; }
+		this.cosmetic.add(shot);
+		this.loop.spawn(shot);
+		this.loop.sound("cannon", shot.position);
 	}
 
 	/** The entity a shot's path entered first during the last step, among those it can hit here */
@@ -258,7 +299,7 @@ export class OnlineSession {
 			if (shot.target && target != shot.target) { continue; }
 			if (shot.hitOnly && !shot.hitOnly.includes(target)) { continue; }
 			if (target instanceof Shot && target.owner == shot.owner) { continue; }
-			if (fromPlayer && target instanceof PlayerShip) { continue; } /* no friendly fire */
+			if (fromPlayer && target instanceof PlayerShip && !this.arena) { continue; } /* co-op: no friendly fire */
 
 			const t = segmentSphereEntry(shot.previousPosition, shot.position, target.position, target.radius + shot.radius);
 			if (t !== null && t < hitAt) {
@@ -270,11 +311,12 @@ export class OnlineSession {
 		return hit;
 	}
 
-	/** This ship's shot hit something on this screen: the hit counts; the server tells everyone else */
+	/** This ship's shot hit something on this screen: the server is told, and checks it; rockets it flies by itself */
 	private hit(shot: Shot, target: Entity): void {
 		const id = this.idOf.get(target);
-		if (id === undefined) { return; }
-		this.hits.push({ id, damage: shot.damage });
+		const number = this.shotNumbers.get(shot);
+		if (id === undefined || number === undefined) { return; }
+		this.hits.push({ shot: number, id, t: round(this.viewTime, 3) });
 
 		/* a ship that survives makes the hit sound now; an explosion waits for the server's word */
 		if (target instanceof Ship && target.absorb(shot.damage)) { this.loop.sound(shot.impactSound, target.position); }
@@ -287,28 +329,33 @@ export class OnlineSession {
 
 			if (entity instanceof Missile) {
 				const target = (entity.target ? this.idOf.get(entity.target) : undefined);
-				if (target !== undefined) { this.rockets.push({ p: rounded(entity.position), v: rounded(entity.velocity), target }); }
+				if (target !== undefined) { this.rockets.push({ p: rounded(entity.position), target }); }
 			} else {
-				this.shots.push({ p: rounded(entity.position), v: rounded(entity.velocity) });
+				const n = ++this.shotsFired;
+				this.shotNumbers.set(entity, n);
+				this.shots.push({ n, t: round(this.viewTime, 3), p: rounded(entity.position), v: rounded(entity.velocity) });
 			}
 		}
 	}
 
 	private report(): void {
 		const { ship } = this;
+		if (ship.dead && !this.hits.length) { return; } /* until there is a new ship; shots can still land */
+
 		const { speed, yaw, pitch } = ship.engine;
 		const q = ship.orientation;
 		this.send({
 			type: "state",
-			ship: {
-				p: rounded(ship.position),
-				q: [round(q[0], 4), round(q[1], 4), round(q[2], 4), round(q[3], 4)],
-				v: rounded(ship.velocity),
-				speed: round(speed.value, 2),
-				target: speed.target,
-				yaw: round(yaw.control, 3),
-				pitch: round(pitch.control, 3),
-			},
+			...(ship.dead ? {} : {
+				ship: {
+					p: rounded(ship.position),
+					q: [round(q[0], 4), round(q[1], 4), round(q[2], 4), round(q[3], 4)],
+					speed: round(speed.value, 2),
+					target: speed.target,
+					yaw: round(yaw.control, 3),
+					pitch: round(pitch.control, 3),
+				},
+			}),
 			shots: this.shots,
 			rockets: this.rockets,
 			hits: this.hits,

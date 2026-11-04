@@ -1,5 +1,7 @@
-import { mat4, quat, vec3 } from "gl-matrix";
+import { mat4, quat, vec3, type ReadonlyVec3 } from "gl-matrix";
 import type { Entity } from "./entity/entity.ts";
+
+const ORIGIN: ReadonlyVec3 = vec3.create();
 
 export interface CameraOptions {
 	/** Vertical field of view (rad) */
@@ -52,6 +54,11 @@ export class Camera {
 		} else {
 			vec3.set(this.followOffset, 0, 0, 0);
 		}
+	}
+
+	/** Where the entity followed is; the origin when there is none */
+	get position(): ReadonlyVec3 {
+		return this.followed?.position ?? ORIGIN;
 	}
 
 	update(): void {

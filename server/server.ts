@@ -6,7 +6,10 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { isDifficultyLevel } from "../src/difficulty.ts";
 import { LEVELS } from "../src/levels.ts";
-import { CLOSE_REPLACED, HEARTBEAT, NET_PATH, SILENCE_LIMIT, type ClientMessage, type ServerMessage } from "../src/net/protocol.ts";
+import {
+	CLOSE_REPLACED, FRAG_LIMITS, GAME_MODES, HEARTBEAT, NET_PATH, SILENCE_LIMIT, TIME_LIMITS,
+	type ClientMessage, type GameMode, type RoomSetup, type ServerMessage,
+} from "../src/net/protocol.ts";
 import { setModelSource } from "../src/nsh.ts";
 import { cleanName } from "../src/scores.ts";
 import type { Member, Room } from "./room.ts";
@@ -31,6 +34,12 @@ export interface GameServer {
 
 /** Largest message a browser may send (bytes) */
 const MAX_MESSAGE = 64 * 1024;
+/** Messages a browser may send per second over time, and at once; a flying browser sends about 30 a second */
+const MESSAGE_RATE = 100;
+const MESSAGE_BURST = 300;
+/** Tries at a room code per second over time, and at once: guessing the codes takes days */
+const JOIN_RATE = 1;
+const JOIN_BURST = 5;
 
 const CONTENT_TYPES: Record<string, string> = {
 	".html": "text/html; charset=utf-8",
@@ -97,6 +106,20 @@ class Client implements Member {
 
 const PING = JSON.stringify({ type: "ping" } satisfies ServerMessage);
 
+/** Allows so many things per second over time, and `burst` at once */
+function rateLimit(rate: number, burst: number): () => boolean {
+	let left = burst;
+	let last = performance.now();
+	return () => {
+		const now = performance.now();
+		left = Math.min(burst, left + rate * (now - last) / 1000);
+		last = now;
+		if (left < 1) { return false; }
+		left--;
+		return true;
+	};
+}
+
 /** One connection: a new client, or one taking its place back after its previous connection dropped */
 function connect(socket: WebSocket, rooms: Rooms): void {
 	let client = new Client(rooms.newMemberId(), socket);
@@ -118,8 +141,12 @@ function connect(socket: WebSocket, rooms: Rooms): void {
 	}, HEARTBEAT * 1000);
 	socket.on("pong", () => { heard = performance.now(); });
 
+	const messageAllowed = rateLimit(MESSAGE_RATE, MESSAGE_BURST);
+	const joinAllowed = rateLimit(JOIN_RATE, JOIN_BURST);
+
 	socket.on("message", (data: RawData) => {
 		heard = performance.now();
+		if (!messageAllowed()) { return; }
 		const message = parse(data);
 		if (!message) { return; }
 		const room = client.room;
@@ -135,6 +162,7 @@ function connect(socket: WebSocket, rooms: Rooms): void {
 			} break;
 
 			case "join": {
+				if (!joinAllowed()) { return error("Too many tries. Wait a moment and try again."); }
 				const found = rooms.find(String(message.code ?? ""));
 				if (!found) { return error(`No room with the code ${String(message.code ?? "").trim().toUpperCase()}.`); }
 				if (found == room) { return; }
@@ -162,9 +190,7 @@ function connect(socket: WebSocket, rooms: Rooms): void {
 			case "name": room?.rename(client.id, String(message.name ?? "")); break;
 
 			case "setup":
-				if (validLevel(message.level) && isDifficultyLevel(String(message.difficulty))) {
-					room?.setup(client.id, message.level, message.difficulty);
-				}
+				if (validSetup(message)) { room?.setup(client.id, message); }
 			break;
 
 			case "start": room?.start(client.id, validLevel(message.level) ? message.level : undefined); break;
@@ -184,6 +210,9 @@ function connect(socket: WebSocket, rooms: Rooms): void {
 }
 
 const validLevel = (level: unknown): level is number => Number.isInteger(level) && Boolean(LEVELS[level as number]);
+const validSetup = ({ mode, level, difficulty, fragLimit, timeLimit }: RoomSetup): boolean => (GAME_MODES.includes(mode as GameMode)
+	&& validLevel(level) && isDifficultyLevel(String(difficulty))
+	&& (FRAG_LIMITS as readonly number[]).includes(fragLimit) && (TIME_LIMITS as readonly number[]).includes(timeLimit));
 
 const MESSAGE_TYPES = new Set<ClientMessage["type"]>(["create", "join", "name", "setup", "start", "lobby", "state", "leave", "resume"]);
 

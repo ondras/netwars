@@ -137,4 +137,44 @@ describe("game server", () => {
 		expect(client.messages.filter(message => message.type == "welcome")).toHaveLength(0);
 		client.close();
 	});
+
+	it("lets the host set up a deathmatch, and nobody set up anything that does not exist", async () => {
+		const host = await Client.open();
+		host.send({ type: "create", name: "Ann", level: 0, difficulty: "normal" });
+		const { room } = await host.next("welcome");
+		expect(room).toMatchObject({ mode: "coop", fragLimit: 10, timeLimit: 5 });
+
+		host.send({ type: "setup", mode: "deathmatch", level: 0, difficulty: "normal", fragLimit: 1000, timeLimit: 5 });
+		host.send({ type: "setup", mode: "deathmatch", level: 0, difficulty: "normal", fragLimit: 20, timeLimit: 10 });
+		const updated = await host.next("room", ({ room }) => room.mode == "deathmatch");
+		expect(updated.room).toMatchObject({ fragLimit: 20, timeLimit: 10 });
+
+		host.send({ type: "start" });
+		expect((await host.next("start")).arena).toMatchObject({ fragLimit: 20 });
+		expect((await host.next("snapshot")).match).toMatchObject({ left: expect.any(Number) });
+
+		host.send({ type: "leave" });
+		host.close();
+	});
+
+	it("does not take guesses at room codes for long", async () => {
+		const client = await Client.open();
+		for (let i = 0; i < 8; i++) { client.send({ type: "join", code: "QQQQ", name: "Cy" }); }
+		expect((await client.next("error", ({ message }) => message.includes("Too many"))).message).toMatch(/Too many tries/);
+		client.close();
+	});
+
+	it("ignores a browser that sends far more than it could need", async () => {
+		const client = await Client.open();
+		for (let i = 0; i < 400; i++) { client.send({ type: "name", name: "x" }); }
+		client.send({ type: "create", name: "Cy", level: 0, difficulty: "normal" });
+		await new Promise(done => setTimeout(done, 100));
+		expect(client.messages.filter(message => message.type == "welcome")).toHaveLength(0);
+
+		await new Promise(done => setTimeout(done, 200)); /* room for more again */
+		client.send({ type: "create", name: "Cy", level: 0, difficulty: "normal" });
+		await client.next("welcome");
+		client.send({ type: "leave" });
+		client.close();
+	});
 });

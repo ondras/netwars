@@ -6,6 +6,7 @@ import type { Texture } from "../geometry.ts";
 import { syncCanvasSize, type Renderer } from "./renderer.ts";
 import billboardFrag from "../shaders/billboard.frag?raw";
 import billboardVert from "../shaders/billboard.vert?raw";
+import dustVert from "../shaders/dust.vert?raw";
 import simpleFrag from "../shaders/simple.frag?raw";
 import simpleVert from "../shaders/simple.vert?raw";
 import starFrag from "../shaders/star.frag?raw";
@@ -20,7 +21,8 @@ interface Program<A extends string, U extends string> {
 type SimpleProgram = Program<"aPosition" | "aColor", "uPmatrix" | "uMVmatrix" | "uOffset">;
 type BillboardProgram = Program<"aPosition" | "aRadius", "uPmatrix" | "uMVmatrix" | "uTexture" | "uViewport">;
 type StarProgram = Program<"aPosition" | "aBrightness", "uPmatrix" | "uVmatrix" | "uSize">;
-type AnyProgram = SimpleProgram | BillboardProgram | StarProgram;
+type DustProgram = Program<"aPosition", "uPmatrix" | "uVmatrix" | "uCamera" | "uSpan" | "uSize" | "uBrightness">;
+type AnyProgram = SimpleProgram | BillboardProgram | StarProgram | DustProgram;
 
 /** Width of lines (edges, sticks, grapples) in CSS pixels; picked on the ship designs page */
 const LINE_WIDTH = 0.75;
@@ -44,6 +46,12 @@ const STAR_COUNT = 800;
 const STAR_SIZE = 2;
 /** Within the camera's far plane; only the view rotation is applied, so the distance just has to be visible */
 const STAR_DISTANCE = 1000;
+
+/** Dust: how many grains, repeating every so many metres, how bright up close (0..1), in CSS pixels */
+const DUST_COUNT = 500;
+const DUST_SPAN = 120;
+const DUST_BRIGHTNESS = 0.9;
+const DUST_SIZE = 1.5;
 
 interface Stars {
 	points: WebGLBuffer;
@@ -76,14 +84,17 @@ interface EntityData {
  */
 export class WebGLRenderer implements Renderer {
 	readonly node = document.createElement("canvas");
+	/** Grains drifting past show the ship's motion where nothing else around does */
+	dust = false;
 	private readonly camera: Camera;
 	private readonly gl: WebGLRenderingContext;
-	private readonly programs: { simple: SimpleProgram; billboard: BillboardProgram; star: StarProgram };
+	private readonly programs: { simple: SimpleProgram; billboard: BillboardProgram; star: StarProgram; dust: DustProgram };
 	private currentProgram: AnyProgram | null = null;
 	/** Programs that need the projection matrix uploaded before use (it may change every frame) */
 	private readonly staleProjection = new Set<AnyProgram>();
 	private readonly entityData = new WeakMap<Entity, EntityData>();
 	private readonly stars: Stars;
+	private readonly dustPoints: WebGLBuffer;
 	/** Line passes in clip units, for the current canvas size and pixel ratio */
 	private lineShifts: Array<[number, number]> = [[0, 0]];
 
@@ -102,9 +113,11 @@ export class WebGLRenderer implements Renderer {
 				["uPmatrix", "uMVmatrix", "uTexture", "uViewport"],
 			),
 			star: this.createProgram(starVert, starFrag, ["aPosition", "aBrightness"], ["uPmatrix", "uVmatrix", "uSize"]),
+			dust: this.createProgram(dustVert, starFrag, ["aPosition"], ["uPmatrix", "uVmatrix", "uCamera", "uSpan", "uSize", "uBrightness"]),
 		};
 
 		this.stars = this.createStars();
+		this.dustPoints = this.buffer(Array.from({ length: 3 * DUST_COUNT }, () => Math.random() * DUST_SPAN));
 
 		gl.enable(gl.CULL_FACE);
 		gl.enable(gl.DEPTH_TEST);
@@ -129,6 +142,7 @@ export class WebGLRenderer implements Renderer {
 		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
 		this.drawStars();
+		if (this.dust) { this.drawDust(); }
 		for (const entity of entities) { this.renderEntity(entity); }
 	}
 
@@ -211,6 +225,31 @@ export class WebGLRenderer implements Renderer {
 
 		gl.depthMask(false);
 		gl.drawArrays(gl.POINTS, 0, stars.count);
+		gl.depthMask(true);
+	}
+
+	/** Grains around the camera, wherever it is; drawn without writing depth, before anything they could be behind */
+	private drawDust(): void {
+		const { gl } = this;
+		const program = this.programs.dust;
+		this.useProgram(program);
+		const { attributes: a, uniforms: u } = program;
+
+		const rotation = mat4.clone(this.camera.vMatrix);
+		rotation[12] = rotation[13] = rotation[14] = 0;
+		gl.uniformMatrix4fv(u.uVmatrix, false, rotation as Float32Array);
+		/* within one span: the shader has few digits, and coordinates can grow large */
+		const [x, y, z] = this.camera.position;
+		gl.uniform3f(u.uCamera, x % DUST_SPAN, y % DUST_SPAN, z % DUST_SPAN);
+		gl.uniform1f(u.uSpan, DUST_SPAN);
+		gl.uniform1f(u.uBrightness, DUST_BRIGHTNESS);
+		gl.uniform1f(u.uSize, Math.max(1, Math.round(DUST_SIZE * (window.devicePixelRatio || 1))));
+
+		gl.bindBuffer(gl.ARRAY_BUFFER, this.dustPoints);
+		gl.vertexAttribPointer(a.aPosition, 3, gl.FLOAT, false, 0, 0);
+
+		gl.depthMask(false);
+		gl.drawArrays(gl.POINTS, 0, DUST_COUNT);
 		gl.depthMask(true);
 	}
 

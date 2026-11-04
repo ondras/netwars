@@ -4,7 +4,7 @@ import { LEVELS } from "./levels.ts";
 import { Menu, type ResultAction } from "./menu.ts";
 import { Connection, type CloseReason } from "./net/connection.ts";
 import { invitedTo, OnlineMenu } from "./net/online-menu.ts";
-import { RECONNECT_GRACE, type ClientMessage, type RoomInfo, type ServerMessage } from "./net/protocol.ts";
+import { RECONNECT_GRACE, type ClientMessage, type MatchResult, type RoomInfo, type ServerMessage } from "./net/protocol.ts";
 import { Leaderboard, score } from "./scores.ts";
 import { effectsVolume, setEffectsVolume } from "./settings.ts";
 
@@ -49,6 +49,11 @@ menu.onVolumeSet = () => game.playTestSound();
 
 game.onOutcome = (result: LevelResult) => {
 	document.body.classList.remove("playing"); /* show the cursor for the buttons */
+	if (result.match) {
+		showMatchResult(result.match);
+		return;
+	}
+
 	const { level, outcome, podsLeft, podsTotal, destroyed, shields, difficulty } = result;
 	const name = LEVELS[level].name;
 	const points = score({ won: outcome == "won", podsLeft, destroyed, shields, difficulty });
@@ -62,6 +67,7 @@ game.onOutcome = (result: LevelResult) => {
 		"won": [`Level ${level + 1} complete`, `Pods saved: ${podsLeft} of ${podsTotal}.${last}`],
 		"ship-destroyed": [(result.online ? "All ships destroyed" : "Ship destroyed"), `Level ${level + 1}: ${name}`],
 		"pods-lost": ["All pods lost", `Level ${level + 1}: ${name}`],
+		"match-over": ["", ""], /* shown above */
 	}[outcome];
 
 	if (result.online) {
@@ -84,6 +90,21 @@ game.onOutcome = (result: LevelResult) => {
 		: { label: "Retry", action: () => play(level) });
 	menu.showResult(title, text, [proceed, toMenu], details);
 };
+
+/** Deathmatch over: who won, and for the host what's next */
+function showMatchResult({ reason, standings }: MatchResult): void {
+	const winners = standings.filter(({ frags }) => frags == standings[0].frags);
+	const title = (winners.length > 1 ? "Draw" : winners[0].id == me ? "You win" : `${winners[0].name} wins`);
+	const text = (reason == "frags" ? "Frag limit reached." : "Time is up.");
+	if (room?.host == me) {
+		menu.showStandings(title, text, [
+			{ label: "Rematch", action: () => send({ type: "start" }) },
+			{ label: "Lobby", action: () => send({ type: "lobby" }) },
+		], standings, me);
+	} else {
+		menu.showStandings(title, `${text} The host picks what's next.`, [{ label: "Leave", action: () => leaveRoom() }], standings, me);
+	}
+}
 
 /* Online play */
 
@@ -114,7 +135,7 @@ online.onBack = () => {
 };
 online.onCreate = name => connectThen(name, { type: "create", name, level: menu.selectedLevel, difficulty: difficultyLevel() });
 online.onJoin = (code, name) => connectThen(name, { type: "join", code, name });
-online.onSetup = (level, difficulty) => send({ type: "setup", level, difficulty });
+online.onSetup = setup => send({ type: "setup", ...setup });
 online.onStart = () => send({ type: "start" });
 online.onLeave = () => leaveRoom();
 
@@ -241,6 +262,7 @@ function receive(message: ServerMessage): void {
 /** The lobby, unless a level is being played or its result is showing */
 function showRoom(info: RoomInfo): void {
 	room = info;
+	game.pilots = info.players;
 	if (info.state == "playing" || (info.state == "over" && game.online)) { return; }
 
 	if (game.online) { game.stop(); } /* back from a level */

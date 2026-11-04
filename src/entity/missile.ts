@@ -54,7 +54,7 @@ export class Missile extends Shot {
 	}
 
 	override update(dt: number, world: World): void {
-		if (this.target && !this.target.dead) { this.turnTowards(this.target.position, this.turnRate * dt); }
+		if (this.target && !this.target.dead) { this.turnTowards(world.nearest(this.target.position, this.position), this.turnRate * dt); }
 		this.faceVelocity();
 		super.update(dt, world);
 	}

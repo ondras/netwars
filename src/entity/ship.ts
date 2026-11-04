@@ -19,7 +19,7 @@ export const BUMP_SPEED_KEPT = 0.3;
 /** How long a ship spins after a bump (s) */
 export const TUMBLE_TIME = 1;
 /** Spin rate right after a bump (rad/s); it fades to nothing over TUMBLE_TIME, turning the ship about 45° */
-const TUMBLE_SPIN = 1.5;
+export const TUMBLE_SPIN = 1.5;
 
 /** Most rockets a ship carries */
 export const ROCKET_CAPACITY = 3;
@@ -87,6 +87,9 @@ export class Ship extends Entity {
 
 	readonly effects: Effects = { rapid: 0, boost: 0 };
 
+	/** Whose shot or rocket hit this ship last */
+	lastHitBy: Entity | null = null;
+
 	private pilot: Pilot | null = null;
 	protected weapon = new Weapon();
 
@@ -130,6 +133,19 @@ export class Ship extends Entity {
 	absorb(damage: number): boolean {
 		this.shields.value = Math.max(0, this.shields.value - damage);
 		return this.shields.value > 0;
+	}
+
+	/** Whole again after being destroyed: full shields and rockets, at a standstill, nothing left of the last flight */
+	revive(): void {
+		this.dead = false;
+		this.exploded = false;
+		this.shields.value = this.shields.max;
+		this.rockets = ROCKET_CAPACITY;
+		this.launch = false;
+		this.lastHitBy = null;
+		this.effects.rapid = this.effects.boost = 0;
+		this.tumble.time = 0;
+		this.engine.speed.value = this.engine.speed.target = 0;
 	}
 
 	get tumbling(): boolean {

@@ -212,6 +212,14 @@
 				margin-top: 10px;
 			}
 
+			.score tr.current {
+				background: rgba(110, 255, 140, 0.15);
+			}
+
+			.score td.name {
+				width: 100%;
+			}
+
 			.score tr.total td {
 				padding-top: 4px;
 				border-top: 1px solid rgba(110, 255, 140, 0.5);
@@ -421,7 +429,8 @@
 				padding: 2px 0;
 			}
 
-			#lobby-description {
+			#lobby-description,
+			#lobby-match-description {
 				margin: 0 0 8px;
 				font-size: 12px;
 				text-align: left;
@@ -503,7 +512,7 @@
 
 		<div id="online" class="panel" hidden>
 			<h2>Multiplayer</h2>
-			<p class="lead">Co-op for up to 4 pilots: guard the pods together.</p>
+			<p class="lead">Up to 4 pilots: guard the pods together, or fight each other.</p>
 			<div class="row"><label for="online-name">Your name</label><input id="online-name" maxlength="16" autocomplete="nickname" spellcheck="false"></div>
 			<button id="online-create">Create a room</button>
 			<h3>Or join a room</h3>
@@ -521,9 +530,17 @@
 			<div class="invite"><input id="lobby-link" readonly aria-label="Invite link"><button id="lobby-copy">Copy link</button></div>
 			<h3 id="lobby-count">Pilots</h3>
 			<ol id="lobby-players"></ol>
-			<div class="row"><label for="lobby-level">Level</label><select id="lobby-level"></select></div>
-			<p id="lobby-description"></p>
-			<div class="row"><label for="lobby-difficulty">Difficulty</label><select id="lobby-difficulty"></select></div>
+			<div class="row"><label for="lobby-mode">Mode</label><select id="lobby-mode"></select></div>
+			<div id="lobby-coop">
+				<div class="row"><label for="lobby-level">Level</label><select id="lobby-level"></select></div>
+				<p id="lobby-description"></p>
+				<div class="row"><label for="lobby-difficulty">Difficulty</label><select id="lobby-difficulty"></select></div>
+			</div>
+			<div id="lobby-match" hidden>
+				<div class="row"><label for="lobby-frags">Frag limit</label><select id="lobby-frags"></select></div>
+				<div class="row"><label for="lobby-time">Time limit</label><select id="lobby-time"></select></div>
+				<p id="lobby-match-description"></p>
+			</div>
 			<p id="lobby-note" class="note"></p>
 			<button id="lobby-start">Start</button><button id="lobby-leave">Leave</button>
 		</div>

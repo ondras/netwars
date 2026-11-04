@@ -1,6 +1,8 @@
 import { DIFFICULTIES, isDifficultyLevel, type DifficultyLevel } from "../difficulty.ts";
 import type { LevelConfig } from "../levels.ts";
-import { CODE_LENGTH, MAX_PLAYERS, type RoomInfo } from "./protocol.ts";
+import { ARENA_SIZE, CODE_LENGTH, FRAG_LIMITS, GAME_MODES, MAX_PLAYERS, TIME_LIMITS, type GameMode, type RoomInfo, type RoomSetup } from "./protocol.ts";
+
+const MODE_LABELS: Record<GameMode, string> = { coop: "Co-op", deathmatch: "Deathmatch" };
 
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -23,8 +25,8 @@ export class OnlineMenu {
 	onCreate: ((name: string) => void) | null = null;
 	onJoin: ((code: string, name: string) => void) | null = null;
 	onBack: (() => void) | null = null;
-	/** Host: level or difficulty changed */
-	onSetup: ((level: number, difficulty: DifficultyLevel) => void) | null = null;
+	/** Host: mode, level, difficulty or a limit changed */
+	onSetup: ((setup: RoomSetup) => void) | null = null;
 	onStart: (() => void) | null = null;
 	onLeave: (() => void) | null = null;
 
@@ -34,8 +36,11 @@ export class OnlineMenu {
 	private readonly nameInput = element<HTMLInputElement>("online-name");
 	private readonly codeInput = element<HTMLInputElement>("online-code");
 	private readonly error = element<HTMLElement>("online-error");
+	private readonly modeSelect = element<HTMLSelectElement>("lobby-mode");
 	private readonly levelSelect = element<HTMLSelectElement>("lobby-level");
 	private readonly difficultySelect = element<HTMLSelectElement>("lobby-difficulty");
+	private readonly fragSelect = element<HTMLSelectElement>("lobby-frags");
+	private readonly timeSelect = element<HTMLSelectElement>("lobby-time");
 	private readonly levels: readonly LevelConfig[];
 
 	constructor(levels: readonly LevelConfig[]) {
@@ -57,12 +62,24 @@ export class OnlineMenu {
 
 		levels.forEach((level, i) => this.levelSelect.append(new Option(`${i + 1}. ${level.name}`, String(i))));
 		for (const [value, { label }] of Object.entries(DIFFICULTIES)) { this.difficultySelect.append(new Option(label, value)); }
+		for (const mode of GAME_MODES) { this.modeSelect.append(new Option(MODE_LABELS[mode], mode)); }
+		for (const frags of FRAG_LIMITS) { this.fragSelect.append(new Option(`${frags} frags`, String(frags))); }
+		for (const minutes of TIME_LIMITS) { this.timeSelect.append(new Option(`${minutes} minutes`, String(minutes))); }
+		element<HTMLElement>("lobby-match-description").textContent =
+			`Every pilot for themselves in a cube of ${ARENA_SIZE} m: fly out of one side and you come back in on the other. A destroyed ship flies again after a moment. The match ends at the frag limit or the time limit, whichever comes first.`;
+
 		const setup = () => {
-			const difficulty = this.difficultySelect.value;
-			if (isDifficultyLevel(difficulty)) { this.onSetup?.(Number(this.levelSelect.value), difficulty); }
+			const difficulty = this.difficultySelect.value as DifficultyLevel;
+			if (!isDifficultyLevel(difficulty)) { return; }
+			this.onSetup?.({
+				mode: this.modeSelect.value as GameMode,
+				level: Number(this.levelSelect.value),
+				difficulty,
+				fragLimit: Number(this.fragSelect.value),
+				timeLimit: Number(this.timeSelect.value),
+			});
 		};
-		this.levelSelect.onchange = setup;
-		this.difficultySelect.onchange = setup;
+		for (const select of [this.modeSelect, this.levelSelect, this.difficultySelect, this.fragSelect, this.timeSelect]) { select.onchange = setup; }
 
 		element<HTMLButtonElement>("lobby-start").onclick = () => this.onStart?.();
 		element<HTMLButtonElement>("lobby-leave").onclick = () => this.onLeave?.();
@@ -131,16 +148,21 @@ export class OnlineMenu {
 		}));
 		element<HTMLElement>("lobby-count").textContent = `${room.players.length} of ${MAX_PLAYERS} pilots`;
 
+		this.modeSelect.value = room.mode;
 		this.levelSelect.value = String(room.level);
 		this.difficultySelect.value = room.difficulty;
-		this.levelSelect.disabled = this.difficultySelect.disabled = !host;
+		this.fragSelect.value = String(room.fragLimit);
+		this.timeSelect.value = String(room.timeLimit);
+		for (const select of [this.modeSelect, this.levelSelect, this.difficultySelect, this.fragSelect, this.timeSelect]) { select.disabled = !host; }
 		element<HTMLElement>("lobby-description").textContent = this.levels[room.level]?.description ?? "";
+		element<HTMLElement>("lobby-coop").hidden = room.mode != "coop";
+		element<HTMLElement>("lobby-match").hidden = room.mode != "deathmatch";
 
 		const start = element<HTMLButtonElement>("lobby-start");
 		start.hidden = !host;
 		element<HTMLElement>("lobby-note").textContent = (room.state == "over"
 			? "The others are just finishing a level. The host starts the next one."
-			: host ? "Send the link to your wingmates. Start when everyone is in." : "The host picks the level and starts it.");
+			: host ? "Send the link to the other pilots. Start when everyone is in." : "The host sets up the game and starts it.");
 		if (firstShow) { (host ? start : element<HTMLButtonElement>("lobby-leave")).focus(); }
 	}
 

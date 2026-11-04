@@ -17,7 +17,7 @@ export const HUNTER_COLOR = "rgb(255, 130, 40)";
 export const RAIDER_COLOR = "rgb(80, 235, 200)";
 export const GUNSHIP_COLOR = "rgb(200, 110, 255)";
 export const POWERUP_COLOR = "rgb(200, 200, 200)";
-/** Teammates in online play: the HUD's green */
+/** Other pilots in online play: the HUD's green */
 export const TEAM_COLOR = "rgb(110, 255, 140)";
 
 /** Grid cells per side */

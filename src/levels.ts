@@ -83,7 +83,8 @@ export const LEVELS: readonly LevelConfig[] = [
 	},
 ];
 
-export type Outcome = "won" | "ship-destroyed" | "pods-lost";
+/** "match-over": a deathmatch reached its frag or time limit */
+export type Outcome = "won" | "ship-destroyed" | "pods-lost" | "match-over";
 
 /** @returns null while the level goes on */
 export function levelOutcome(state: { shipDead: boolean; podsLeft: number; enemiesLeft: number }): Outcome | null {

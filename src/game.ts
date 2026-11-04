@@ -12,7 +12,7 @@ import { EnemySpawner, PowerupSpawner } from "./entity/spawner.ts";
 import { LEVELS, levelOutcome, POD_FIELD, type EnemyKind, type Outcome } from "./levels.ts";
 import { TargetLock } from "./lock.ts";
 import { DEFAULT_RULES, Loop } from "./loop.ts";
-import type { ClientMessage, OutcomeMessage, Snapshot, StartMessage } from "./net/protocol.ts";
+import { RESPAWN_DELAY, type ClientMessage, type MatchResult, type OutcomeMessage, type PlayerInfo, type Snapshot, type StartMessage } from "./net/protocol.ts";
 import { OnlineSession } from "./net/session.ts";
 import { IdlePilot, PlayerPilot, type Pilot } from "./pilot.ts";
 import { HUD } from "./render/hud.ts";
@@ -24,8 +24,13 @@ const IDLE_TURN = 0.015;
 /** Where the camera follows a teammate from once your ship is gone (m, in their frame: behind and above) */
 const SPECTATE_OFFSET = vec3.fromValues(0, 2.5, 10);
 
+/** How long the news of who destroyed whom stays on screen (s) */
+const NOTICE_TIME = 3;
+
 /** Rockets lock onto enemy ships only */
 export const isRocketTarget = (entity: Entity): boolean => entity instanceof Pirate || entity instanceof Hunter;
+/** In a deathmatch that is the other pilots' ships; your own is the one not drawn */
+const isOpponent = (entity: Entity): boolean => entity instanceof PlayerShip && entity.visible;
 
 /** Holds course and speed: an online level goes on while its pause menu is open */
 const HOLD: Pilot = {
@@ -47,6 +52,8 @@ export interface LevelResult {
 	difficulty: DifficultyLevel;
 	/** Played online, with others */
 	online: boolean;
+	/** How a deathmatch ended */
+	match?: MatchResult;
 }
 
 interface Session {
@@ -64,9 +71,12 @@ interface Session {
 export class Game {
 	/** Called once per level, when it is won or lost (the scene keeps running) */
 	onOutcome: ((result: LevelResult) => void) | null = null;
+	/** Who is in the room: names for what the HUD says during a deathmatch */
+	pilots: readonly PlayerInfo[] = [];
 
 	private readonly loop = new Loop();
 	private readonly camera = new Camera();
+	private readonly scene = new WebGLRenderer(this.camera);
 	private readonly hud = new HUD(this.camera);
 	private readonly sounds = new SoundPlayer(effectsVolume());
 	private readonly pilot: PlayerPilot;
@@ -75,14 +85,19 @@ export class Game {
 	private held = false;
 	/** Followed by the camera once your ship is gone in an online level */
 	private watching: Ship | null = null;
+	/** This player's id, online */
+	private me: number | null = null;
+	/** Who destroyed whom, and until when (s) that is on screen */
+	private notice: { text: string; until: number } | null = null;
+	/** When your ship flies again (s), as far as can be told here */
+	private backAt: number | null = null;
 
 	constructor(container: HTMLElement) {
 		this.pilot = new PlayerPilot(container);
 
-		const scene = new WebGLRenderer(this.camera);
 		this.hud.node.className = "hud";
-		container.append(scene.node, this.hud.node);
-		this.loop.renderers.push(scene, this.hud);
+		container.append(this.scene.node, this.hud.node);
+		this.loop.renderers.push(this.scene, this.hud);
 
 		this.loop.onStep = () => this.step();
 		this.loop.onSound = (name, at, to) => {
@@ -180,7 +195,10 @@ export class Game {
 	startOnline(send: (message: ClientMessage) => void, start: StartMessage, me: number): void {
 		this.stop();
 		this.sounds.unlock();
-		const ship = this.createShip();
+		this.me = me;
+		this.loop.size = start.arena?.size ?? null;
+		this.scene.dust = start.arena !== null;
+		const ship = this.createShip(start.arena ? isOpponent : isRocketTarget);
 		vec3.set(ship.position, ...start.spawn);
 		quat.set(ship.orientation, ...start.facing);
 		ship.rockets = start.rockets;
@@ -192,6 +210,7 @@ export class Game {
 		}
 
 		const online = new OnlineSession(this.loop, send, start, me, ship);
+		online.onFrag = (killer, victim) => this.tellFrag(killer, victim);
 		this.loop.rules = online.rules;
 		this.begin({ level: start.level, difficulty: start.difficulty, ship, outcome: null, local: null, online });
 	}
@@ -201,8 +220,8 @@ export class Game {
 	}
 
 	/** The server says the online level is over */
-	endOnline({ outcome, podsLeft, podsTotal, destroyed }: OutcomeMessage): void {
-		if (this.session?.online && !this.session.outcome) { this.finish(this.session, outcome, podsLeft, podsTotal, destroyed); }
+	endOnline({ outcome, podsLeft, podsTotal, destroyed, match }: OutcomeMessage): void {
+		if (this.session?.online && !this.session.outcome) { this.finish(this.session, outcome, podsLeft, podsTotal, destroyed, match); }
 	}
 
 	/** End the level (if any) and clear the scene */
@@ -210,22 +229,28 @@ export class Game {
 		this.loop.clear();
 		this.loop.paused = false;
 		this.loop.rules = DEFAULT_RULES;
+		this.loop.size = null;
+		this.scene.dust = false;
 		this.held = false;
 		this.watching = null;
+		this.notice = null;
+		this.backAt = null;
 		this.session = null;
 		this.camera.follow(null);
 		this.sounds.listener = null;
 		this.hud.ship = null;
 		this.hud.status = null;
+		this.hud.lines = null;
+		this.hud.notices = null;
 	}
 
 	/** Your ship: flown from the cockpit, so never drawn */
-	private createShip(): PlayerShip {
+	private createShip(isTarget: (entity: Entity) => boolean = isRocketTarget): PlayerShip {
 		const ship = new PlayerShip();
 		ship.visible = false;
 		ship.setPilot(this.pilot);
 		ship.rockets = ROCKET_CAPACITY; /* a full rack every level */
-		ship.targetLock = new TargetLock(isRocketTarget);
+		ship.targetLock = new TargetLock(isTarget);
 		this.pilot.reset();
 		this.loop.players.push(ship);
 		return ship;
@@ -237,10 +262,19 @@ export class Game {
 		this.sounds.listener = session.ship;
 		this.hud.ship = session.ship;
 		this.hud.status = () => this.status();
+		if (session.online?.arena) {
+			this.hud.lines = () => this.matchScores();
+			this.hud.notices = () => this.matchNotices();
+		}
 	}
 
 	private status(): string {
 		const { level, local, online } = this.session!;
+		if (online?.arena) {
+			const left = Math.ceil(online.match?.left ?? 0);
+			const clock = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`;
+			return `DEATHMATCH · ${clock} · FIRST TO ${online.arena.fragLimit}`;
+		}
 		const name = `LEVEL ${level + 1} ${LEVELS[level].name.toUpperCase()}`;
 		if (online) {
 			const flying = online.players.filter(ship => !ship.dead).length;
@@ -248,6 +282,39 @@ export class Game {
 		}
 		const podsLeft = local!.pods.filter(pod => !pod.dead).length;
 		return `${name} · ENEMIES ${local!.enemies.remaining} · PODS ${podsLeft}/${local!.pods.length}`;
+	}
+
+	private pilotName(id: number): string {
+		return this.pilots.find(pilot => pilot.id == id)?.name ?? "Someone";
+	}
+
+	/** Most frags first */
+	private matchScores(): string[] {
+		const frags = this.session?.online?.match?.frags ?? {};
+		return this.pilots
+			.map(({ id, name }) => ({ name: (id == this.me ? "YOU" : name.toUpperCase()), frags: frags[id] ?? 0 }))
+			.sort((a, b) => b.frags - a.frags)
+			.map(({ name, frags }) => `${frags} ${name}`);
+	}
+
+	private tellFrag(killer: number, victim: number): void {
+		const text = (killer == this.me
+			? `You destroyed ${this.pilotName(victim)}`
+			: victim == this.me ? `Destroyed by ${this.pilotName(killer)}` : `${this.pilotName(killer)} destroyed ${this.pilotName(victim)}`);
+		this.notice = { text, until: performance.now() / 1000 + NOTICE_TIME };
+	}
+
+	private matchNotices(): string[] {
+		const now = performance.now() / 1000;
+		const session = this.session;
+		const lines = (this.notice && now < this.notice.until ? [this.notice.text] : []);
+		if (session?.ship.dead && !session.outcome) {
+			this.backAt ??= now + RESPAWN_DELAY;
+			lines.push(`Back in ${Math.max(1, Math.ceil(this.backAt - now))} s`);
+		} else {
+			this.backAt = null;
+		}
+		return lines;
 	}
 
 	private step(): void {
@@ -272,16 +339,16 @@ export class Game {
 		if (outcome) { this.finish(session, outcome, podsLeft, pods.length, enemies.destroyed); }
 	}
 
-	/** Once your ship is gone, the camera follows a teammate still flying */
+	/** Once your ship is gone, the camera follows a teammate still flying; in a deathmatch it stays until you fly again */
 	private spectate(online: OnlineSession): void {
-		if (!online.ship.dead || (this.watching && !this.watching.dead)) { return; }
+		if (online.arena || !online.ship.dead || (this.watching && !this.watching.dead)) { return; }
 		this.watching = online.teammates[0] ?? null;
 		if (!this.watching) { return; }
 		this.camera.follow(this.watching, SPECTATE_OFFSET);
 		this.sounds.listener = this.watching;
 	}
 
-	private finish(session: Session, outcome: Outcome, podsLeft: number, podsTotal: number, destroyed: Record<EnemyKind, number>): void {
+	private finish(session: Session, outcome: Outcome, podsLeft: number, podsTotal: number, destroyed: Record<EnemyKind, number>, match?: MatchResult): void {
 		session.outcome = outcome;
 		this.held = false;
 		/* the mouse is for the result panel now: the ship drifts to a stop, turning slowly */
@@ -296,6 +363,7 @@ export class Game {
 			shields: (session.ship.dead ? 0 : session.ship.shields.value),
 			difficulty: session.difficulty,
 			online: session.online !== null,
+			...(match ? { match } : {}),
 		});
 	}
 }

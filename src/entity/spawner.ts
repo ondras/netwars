@@ -202,7 +202,7 @@ export interface PowerupSpawnerOptions {
 
 const POWERUP_KINDS: readonly PowerupKind[] = ["shields", "rapid", "boost", "rockets"];
 
-/** Invisible scene member that places random powerups around the pod field */
+/** Invisible scene member that places random powerups around the pod field, or anywhere in a world that wraps around */
 export class PowerupSpawner extends Entity {
 	private readonly options: PowerupSpawnerOptions;
 	private readonly players: readonly Ship[];
@@ -230,6 +230,13 @@ export class PowerupSpawner extends Entity {
 
 		const kind = POWERUP_KINDS[Math.floor(Math.random() * POWERUP_KINDS.length)];
 		const powerup = new Powerup(kind, this.players);
+		this.waiting.push(powerup);
+		world.spawn(powerup);
+
+		if (world.size !== null) {
+			for (let axis = 0; axis < 3; axis++) { powerup.position[axis] = (Math.random() - 0.5) * world.size; }
+			return;
+		}
 
 		const pods = world.scene.filter(entity => entity instanceof Pod && !entity.dead);
 		const center = vec3.create();
@@ -239,9 +246,6 @@ export class PowerupSpawner extends Entity {
 		const distance = this.options.radius * Math.sqrt(Math.random()); /* uniform over the disc */
 		vec3.scaleAndAdd(powerup.position, center, randomHorizontal(), distance);
 		powerup.position[1] = center[1] + (Math.random() - 0.5) * 10;
-
-		this.waiting.push(powerup);
-		world.spawn(powerup);
 	}
 }
 

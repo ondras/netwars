@@ -1,4 +1,4 @@
-import { mat4, quat, vec3 } from "gl-matrix";
+import { mat4, quat, vec3, type ReadonlyVec3 } from "gl-matrix";
 import { boundingRadius, type Geometry } from "../geometry.ts";
 import { loadNSH } from "../nsh.ts";
 import type { World } from "../world.ts";
@@ -46,6 +46,11 @@ export class Entity {
 		mat4.fromRotationTranslation(result, this.orientation, this.position);
 		mat4.scale(result, result, this.scale);
 		return result;
+	}
+
+	/** To another copy of its place in a world that wraps around */
+	shift(offset: ReadonlyVec3): void {
+		vec3.add(this.position, this.position, offset);
 	}
 
 	/** Advance the simulation by dt seconds */

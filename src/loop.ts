@@ -5,7 +5,7 @@ import { DIFFICULTIES, type Difficulty } from "./difficulty.ts";
 import type { Entity } from "./entity/entity.ts";
 import type { Ship } from "./entity/ship.ts";
 import type { Renderer } from "./render/renderer.ts";
-import type { World } from "./world.ts";
+import { nearestCopy, type World } from "./world.ts";
 
 export interface LoopOptions {
 	/** Fixed simulation step (s) */
@@ -28,6 +28,7 @@ export class Loop implements World {
 	readonly players: Ship[] = [];
 	difficulty: Difficulty = DIFFICULTIES.normal;
 	debris = true;
+	size: number | null = null;
 	rules: Rules = DEFAULT_RULES;
 	readonly renderers: Renderer[] = [];
 	/** Called after every simulation step */
@@ -38,6 +39,8 @@ export class Loop implements World {
 	onRemove: ((entity: Entity) => void) | null = null;
 	/** While set, the scene is still drawn but the simulation does not advance */
 	paused = false;
+	/** Steps still to run in this frame: at a low frame rate many run at once, each standing for a moment before the frame's end */
+	stepsLeft = 0;
 
 	private readonly options: LoopOptions;
 	private readonly spawned: Entity[] = [];
@@ -71,6 +74,10 @@ export class Loop implements World {
 		this.spawned.push(...entities);
 	}
 
+	nearest(point: ReadonlyVec3, around: ReadonlyVec3): ReadonlyVec3 {
+		return (this.size === null ? point : nearestCopy(point, around, this.size));
+	}
+
 	sound(name: SoundName, at?: ReadonlyVec3, to?: Entity): void {
 		this.onSound?.(name, at, to);
 	}
@@ -97,6 +104,7 @@ export class Loop implements World {
 		let steps = 0;
 		while (this.accumulator >= step) {
 			this.accumulator -= step;
+			this.stepsLeft = Math.floor(this.accumulator / step);
 			this.update(step);
 			steps++;
 		}

@@ -1,4 +1,4 @@
-import { vec3 } from "gl-matrix";
+import { vec3, type ReadonlyVec3 } from "gl-matrix";
 import type { SoundName } from "../audio/sounds.ts";
 import { Color } from "../color.ts";
 import { circle } from "../geometry.ts";
@@ -6,7 +6,7 @@ import type { World } from "../world.ts";
 import { Entity } from "./entity.ts";
 
 /** Visual and hit-test radius (m) */
-const RADIUS = 0.15;
+export const SHOT_RADIUS = 0.15;
 
 export class Shot extends Entity {
 	/** Position before the last update; the segment to it is used for hit tests */
@@ -37,12 +37,17 @@ export class Shot extends Entity {
 		this.damage = damage;
 		this.color = color;
 
-		this.geometries = [circle(vec3.create(), RADIUS, new Color(color))];
+		this.geometries = [circle(vec3.create(), SHOT_RADIUS, new Color(color))];
 	}
 
 	/** Remaining life span (s) */
 	get timeLeft(): number {
 		return this.time;
+	}
+
+	override shift(offset: ReadonlyVec3): void {
+		super.shift(offset);
+		vec3.add(this.previousPosition, this.previousPosition, offset);
 	}
 
 	override update(dt: number, world: World): void {

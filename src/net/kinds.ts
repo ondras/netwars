@@ -20,7 +20,7 @@ export function kindOf(entity: Entity): EntityKind | null {
 	if (entity instanceof Gunship) { return "gunship"; }
 	if (entity instanceof Hunter) { return "hunter"; }
 	if (entity instanceof PlayerShip) { return "player"; }
-	if (entity instanceof Missile) { return "missile"; }
+	if (entity instanceof Missile) { return (entity.owner instanceof PlayerShip ? "rocket" : "missile"); }
 	if (entity instanceof Grapple) { return "grapple"; }
 	if (entity instanceof Powerup) { return powerupKind(entity.kind); }
 	return null;
@@ -61,7 +61,8 @@ export function createCopy(kind: EntityKind): Entity {
 			case "raider": return new Raider([]);
 			case "hunter": return new Hunter([]);
 			case "gunship": return new Gunship([]);
-			case "missile": return new Missile(vec3.create(), vec3.fromValues(0, 0, -1), placeholders.entity, placeholders.entity);
+			case "missile":
+			case "rocket": return new Missile(vec3.create(), vec3.fromValues(0, 0, -1), placeholders.entity, placeholders.entity);
 			case "player": return new PlayerShip();
 			case "grapple": return new Grapple(placeholders.entity, placeholders.pod);
 			default: return new Powerup(kind.slice("powerup-".length) as PowerupKind, []);

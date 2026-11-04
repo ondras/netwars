@@ -42,6 +42,10 @@ export class HUD implements Renderer {
 	ship: Ship | null = null;
 	/** Text for the top left corner (level, enemies, pods) */
 	status: (() => string) | null = null;
+	/** More lines below it (a match's scores) */
+	lines: (() => readonly string[]) | null = null;
+	/** Lines in the middle of the view, upper part (who destroyed whom) */
+	notices: (() => readonly string[]) | null = null;
 
 	private readonly ctx = this.node.getContext("2d")!;
 	private readonly radar = new RadarScope(RADAR_RANGE);
@@ -74,6 +78,10 @@ export class HUD implements Renderer {
 		ctx.textBaseline = "alphabetic";
 
 		if (this.status) { ctx.fillText(this.status(), 16, 24); }
+		this.lines?.().forEach((line, i) => ctx.fillText(line, 16, 42 + i * 16));
+		ctx.textAlign = "center";
+		this.notices?.().forEach((line, i) => ctx.fillText(line, width / 2, height / 4 + i * 18));
+		ctx.textAlign = "start";
 		if (ship.dead) { return; }
 
 		this.width = width;

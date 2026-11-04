@@ -55,7 +55,8 @@ export function resolveHits(entities: readonly Entity[], world: World): void {
 			if (shot.hitOnly && !shot.hitOnly.includes(target)) { continue; }
 			if (target instanceof Shot && target.owner == shot.owner) { continue; } /* never your own rockets */
 
-			const t = segmentSphereEntry(shot.previousPosition, shot.position, target.position, target.radius + shot.radius);
+			const center = world.nearest(target.position, shot.position);
+			const t = segmentSphereEntry(shot.previousPosition, shot.position, center, target.radius + shot.radius);
 			if (t !== null && t < hitAt) {
 				hit = target;
 				hitAt = t;
@@ -65,6 +66,7 @@ export function resolveHits(entities: readonly Entity[], world: World): void {
 		if (!hit) { continue; }
 
 		shot.dead = true;
+		if (hit instanceof Ship) { hit.lastHitBy = shot.owner; }
 		const survives = (hit instanceof Ship && hit.absorb(shot.damage));
 		if (survives) {
 			world.sound(shot.impactSound, hit.position);

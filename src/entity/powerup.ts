@@ -100,7 +100,7 @@ export class Powerup extends Entity {
 
 		for (const player of this.players) {
 			if (player.dead) { continue; }
-			if (vec3.distance(this.position, player.position) <= this.radius + player.radius + PICKUP_GAP) {
+			if (vec3.distance(this.position, world.nearest(player.position, this.position)) <= this.radius + player.radius + PICKUP_GAP) {
 				applyPowerup(this.kind, player);
 				world.sound("powerup", undefined, player);
 				this.collector = player;

@@ -1,6 +1,7 @@
 import { DIFFICULTIES, difficultyLevel, isDifficultyLevel, setDifficulty } from "./difficulty.ts";
 import { helpMarkup } from "./help.ts";
 import type { LevelConfig } from "./levels.ts";
+import type { Standing } from "./net/protocol.ts";
 import type { Entry, Leaderboard, Score } from "./scores.ts";
 
 export interface ResultAction {
@@ -206,15 +207,13 @@ export class Menu {
 		this.onStart?.(Number(this.levelSelect.value));
 	}
 
-	/** End-of-level panel; when the score made the board, it first asks for the player's name */
-	showResult(title: string, text: string, actions: readonly ResultAction[], { score, level, entry }: ResultScore): void {
+	/** The panel after a level or match, with the buttons; what else it shows is up to the caller */
+	private openResult(title: string, text: string, actions: readonly ResultAction[], withBoard: boolean): () => void {
 		element<HTMLElement>("result-title").textContent = title;
 		element<HTMLElement>("result-text").textContent = text;
-		renderScore(element<HTMLTableElement>("result-score"), score);
-
-		element<HTMLElement>("result-board-title").textContent = `Best scores · ${level}`;
-		const board = () => renderBoard(element<HTMLTableElement>("result-board"), this.leaderboard.entries(level), entry?.id);
-		board();
+		element<HTMLElement>("result-board-title").hidden = !withBoard;
+		element<HTMLElement>("result-board").hidden = !withBoard;
+		element<HTMLFormElement>("result-name").hidden = true;
 
 		const buttons = element<HTMLElement>("result-actions");
 		buttons.replaceChildren(...actions.map(({ label, action }) => {
@@ -227,15 +226,34 @@ export class Menu {
 			};
 			return button;
 		}));
-		const focusActions = () => (buttons.firstElementChild as HTMLElement | null)?.focus();
-
-		const form = element<HTMLFormElement>("result-name");
-		form.hidden = !entry;
 		this.result.hidden = false;
 
 		this.clicksIgnoredUntil = performance.now() + RESULT_CLICK_GUARD;
 		this.result.classList.add("guarded"); /* dims the buttons until they take clicks */
 		setTimeout(() => this.result.classList.remove("guarded"), RESULT_CLICK_GUARD);
+
+		return () => (buttons.firstElementChild as HTMLElement | null)?.focus();
+	}
+
+	/** After a deathmatch: who got how many frags */
+	showStandings(title: string, text: string, actions: readonly ResultAction[], standings: readonly Standing[], me: number | null): void {
+		const focusActions = this.openResult(title, text, actions, false);
+		element<HTMLTableElement>("result-score").replaceChildren(...standings.map(({ id, name, frags }, i) =>
+			row([[`${i + 1}.`, "number"], [name, "name"], [String(frags), "number"]], id == me ? "current" : "")));
+		focusActions();
+	}
+
+	/** End-of-level panel; when the score made the board, it first asks for the player's name */
+	showResult(title: string, text: string, actions: readonly ResultAction[], { score, level, entry }: ResultScore): void {
+		const focusActions = this.openResult(title, text, actions, true);
+		renderScore(element<HTMLTableElement>("result-score"), score);
+
+		element<HTMLElement>("result-board-title").textContent = `Best scores · ${level}`;
+		const board = () => renderBoard(element<HTMLTableElement>("result-board"), this.leaderboard.entries(level), entry?.id);
+		board();
+
+		const form = element<HTMLFormElement>("result-name");
+		form.hidden = !entry;
 
 		if (!entry) {
 			focusActions();
