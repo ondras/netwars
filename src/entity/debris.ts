@@ -9,6 +9,9 @@ const COLORS = [0xff1111, 0xff4411, 0xff7711, 0xffaa11, 0xffdd11];
 /** Typical speed of debris flying away from the explosion center (m/s) */
 export const EXPLOSION_SPEED = 6;
 
+/** A ship with more faces and lines than this leaves a sample of them: each piece of debris is an entity with its own buffers */
+export const MAX_DEBRIS = 60;
+
 /** Life span range (s) */
 const MIN_LIFETIME = 2;
 const MAX_LIFETIME = 3;
@@ -99,7 +102,9 @@ export function explode(entity: Entity, world: World, force = EXPLOSION_SPEED): 
 	world.sound("explosion", entity.position);
 	if (!world.debris) { return; }
 
-	for (const geometry of entity.geometries) {
-		world.spawn(Debris.fromGeometry(entity, geometry, force), Debris.particle(entity, force));
+	const { geometries } = entity;
+	const pieces = Math.min(geometries.length, MAX_DEBRIS);
+	for (let i = 0; i < pieces; i++) {
+		world.spawn(Debris.fromGeometry(entity, geometries[Math.floor(i * geometries.length / pieces)], force), Debris.particle(entity, force));
 	}
 }

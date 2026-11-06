@@ -24,7 +24,7 @@ interface TestMember extends Member {
 
 function member(id: number): TestMember {
 	const messages: ServerMessage[] = [];
-	return { id, name: `Pilot ${id}`, token: `token-${id}`, messages, send: message => { messages.push(message); } };
+	return { id, name: `Pilot ${id}`, token: `token-${id}`, look: 0, messages, send: message => { messages.push(message); } };
 }
 
 const snapshots = (m: TestMember) => m.messages.filter((message): message is Snapshot => message.type == "snapshot");
@@ -95,6 +95,27 @@ async function twoPlayers(level = 0): Promise<{ room: Room; host: TestMember; gu
 }
 
 describe("game rooms", () => {
+	it("tell everyone which ship each pilot flies, and let them change it between levels only", async () => {
+		const host = member(1);
+		const guest = member(2);
+		guest.look = 7;
+		const room = new Room("ABCD", host, 0, "normal");
+		expect(room.join(guest)).toBeNull();
+		expect(room.info().players.map(({ look }) => look)).toEqual([0, 7]);
+
+		room.setLook(host.id, 4);
+		const told = guest.messages.filter((message): message is Extract<ServerMessage, { type: "room" }> => message.type == "room").at(-1)!;
+		expect(told.room.players.map(({ look }) => look)).toEqual([4, 7]);
+
+		room.start(host.id);
+		await settle();
+		room.setLook(host.id, 9); /* the level is on: the ship in flight stays what it is */
+		run(room, 0.1);
+		const { looks, e } = lastSnapshot(guest);
+		const players = e.filter(record => record[1] == kindIndex("player")).map(([id]) => looks[id]);
+		expect(players.sort((a, b) => a - b)).toEqual([4, 7]);
+	});
+
 	it("start a level for everyone, then send snapshots of every ship and pod", async () => {
 		const { room, host, guest } = await twoPlayers();
 

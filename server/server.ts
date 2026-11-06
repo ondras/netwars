@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { isDifficultyLevel } from "../src/difficulty.ts";
+import { DEFAULT_LOOK, isLook } from "../src/entity/player-ships.ts";
 import { LEVELS } from "../src/levels.ts";
 import {
 	CLOSE_REPLACED, FRAG_LIMITS, GAME_MODES, HEARTBEAT, NET_PATH, SILENCE_LIMIT, TIME_LIMITS,
@@ -91,6 +92,7 @@ class Client implements Member {
 	readonly id: number;
 	readonly token = randomBytes(18).toString("base64url");
 	name = cleanName("");
+	look = DEFAULT_LOOK;
 	room: Room | null = null;
 	socket: WebSocket;
 
@@ -156,6 +158,7 @@ function connect(socket: WebSocket, rooms: Rooms): void {
 				if (!validLevel(message.level) || !isDifficultyLevel(String(message.difficulty))) { return error("Unknown level or difficulty."); }
 				leave();
 				client.name = cleanName(String(message.name ?? ""));
+				if (isLook(message.look)) { client.look = message.look; }
 				client.room = rooms.create(client, message.level, message.difficulty);
 				if (!client.room) { return error("The server is full. Try again later."); }
 				client.room.welcome(client);
@@ -168,6 +171,7 @@ function connect(socket: WebSocket, rooms: Rooms): void {
 				if (found == room) { return; }
 				leave();
 				client.name = cleanName(String(message.name ?? ""));
+				if (isLook(message.look)) { client.look = message.look; }
 				const refused = found.join(client);
 				if (refused) { return error(refused); }
 				client.room = found;
@@ -188,6 +192,10 @@ function connect(socket: WebSocket, rooms: Rooms): void {
 			} break;
 
 			case "name": room?.rename(client.id, String(message.name ?? "")); break;
+
+			case "look":
+				if (isLook(message.look)) { room?.setLook(client.id, message.look); }
+			break;
 
 			case "setup":
 				if (validSetup(message)) { room?.setup(client.id, message); }
@@ -214,7 +222,7 @@ const validSetup = ({ mode, level, difficulty, fragLimit, timeLimit }: RoomSetup
 	&& validLevel(level) && isDifficultyLevel(String(difficulty))
 	&& (FRAG_LIMITS as readonly number[]).includes(fragLimit) && (TIME_LIMITS as readonly number[]).includes(timeLimit));
 
-const MESSAGE_TYPES = new Set<ClientMessage["type"]>(["create", "join", "name", "setup", "start", "lobby", "state", "leave", "resume"]);
+const MESSAGE_TYPES = new Set<ClientMessage["type"]>(["create", "join", "name", "look", "setup", "start", "lobby", "state", "leave", "resume"]);
 
 /** A message's shape is checked further where its fields are used */
 function parse(data: RawData): ClientMessage | null {

@@ -4,6 +4,7 @@ import { Debris } from "../entity/debris.ts";
 import { Missile } from "../entity/missile.ts";
 import { Pirate } from "../entity/pirate.ts";
 import { PlayerShip } from "../entity/player-ship.ts";
+import { lookOf, shipGeometries } from "../entity/player-ships.ts";
 import { Pod } from "../entity/pod.ts";
 import { ROCKET, ROCKET_CAPACITY } from "../entity/ship.ts";
 import { Shot } from "../entity/shot.ts";
@@ -38,10 +39,10 @@ function setup(arena: StartMessage["arena"] = null) {
 	loop.onSound = name => sounds.push(name);
 
 	/** Arrives now, sent at server time t (no delay: the clocks match); this player's ship is always in it, unless told otherwise */
-	const receive = (t: number, records: EntityRecord[], ev: GameEvent[] = [], shields = 100, own: { ship: number; flying: boolean } = { ship: MY_SHIP, flying: true }) => {
+	const receive = (t: number, records: EntityRecord[], ev: GameEvent[] = [], shields = 100, own: { ship: number; flying: boolean; looks?: Record<number, number> } = { ship: MY_SHIP, flying: true }) => {
 		clock.now = t;
 		const e = (own.flying && !records.some(([id]) => id == own.ship) ? [...records, record(own.ship, "player", [0, 0, 0], shields)] : records);
-		session.receive({ type: "snapshot", t, e, ev, enemies: 2, pods: 3, shields, ship: own.ship } satisfies Snapshot);
+		session.receive({ type: "snapshot", t, e, ev, enemies: 2, pods: 3, shields, ship: own.ship, looks: own.looks ?? {} } satisfies Snapshot);
 	};
 	/** Steps while the local clock runs on */
 	const run = (seconds: number) => {
@@ -58,6 +59,17 @@ const record = (id: number, kind: EntityKind, [x, y, z]: [number, number, number
 	[id, kindIndex(kind), x, y, z, 0, 0, 0, 1, extra];
 
 describe("online session", () => {
+	it("shows another pilot's ship in the ship and colours they picked", () => {
+		const { loop, ship, clock, receive, run } = setup();
+		const look = lookOf(5, 2);
+		receive(0, [record(TEAMMATE, "player", [0, 0, -20])], [], 100, { ship: MY_SHIP, flying: true, looks: { [TEAMMATE]: look } });
+		clock.now = INTERPOLATION_DELAY;
+		run(2 * loop.step);
+
+		const other = loop.scene.find(entity => entity instanceof PlayerShip && entity != ship)!;
+		expect(other.geometries).toBe(shipGeometries(look));
+	});
+
 	it("shows the server's entities a moment in the past, moving smoothly between snapshots", async () => {
 		const { loop, clock, receive, run } = setup();
 		receive(0, [record(5, "pod", [0, 0, -20])]);

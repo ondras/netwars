@@ -67,6 +67,8 @@ export class Menu {
 	onStart: ((level: number) => void) | null = null;
 	/** "Multiplayer" pressed */
 	onMultiplayer: (() => void) | null = null;
+	/** The button for picking your ship pressed */
+	onShip: (() => void) | null = null;
 	onResume: (() => void) | null = null;
 	/** Leave the paused level */
 	onLeave: (() => void) | null = null;
@@ -109,6 +111,7 @@ export class Menu {
 			this.titleScreen.hidden = true;
 			this.onMultiplayer?.();
 		};
+		element<HTMLButtonElement>("title-ship").onclick = () => this.onShip?.();
 		element<HTMLButtonElement>("start").onclick = () => this.start();
 		element<HTMLButtonElement>("single-back").onclick = () => this.showTitle();
 		const volumeSlider = element<HTMLInputElement>("effects-volume");
@@ -140,6 +143,11 @@ export class Menu {
 			this.onVolume?.(Number(slider.value) / 100);
 		};
 		slider.onchange = () => this.onVolumeSet?.();
+	}
+
+	/** What the title screen's button says you fly */
+	showShip(name: string): void {
+		element<HTMLButtonElement>("title-ship").textContent = `Your ship: ${name}`;
 	}
 
 	get singlePlayerVisible(): boolean {

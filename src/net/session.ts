@@ -215,7 +215,7 @@ export class OnlineSession {
 		for (const record of received.snapshot.e) {
 			const [id, kind] = record;
 			if (id == this.shipId || this.gone.has(id) || this.copies.has(id) || !ENTITY_KINDS[kind]) { continue; }
-			const copy = createCopy(ENTITY_KINDS[kind]);
+			const copy = createCopy(ENTITY_KINDS[kind], received.snapshot.looks[id]);
 			if (ENTITY_KINDS[kind] == "rocket" && !this.arena) { copy.hittable = false; } /* co-op: no friendly fire */
 			this.copies.set(id, copy);
 			this.idOf.set(copy, id);

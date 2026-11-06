@@ -17,7 +17,7 @@ import { OnlineSession } from "./net/session.ts";
 import { IdlePilot, PlayerPilot, type Pilot } from "./pilot.ts";
 import { HUD } from "./render/hud.ts";
 import { WebGLRenderer } from "./render/webgl.ts";
-import { effectsVolume } from "./settings.ts";
+import { effectsVolume, shipLook } from "./settings.ts";
 
 /** Camera turn rate while no level is running, and after one ends (rad/s) */
 const IDLE_TURN = 0.015;
@@ -246,7 +246,7 @@ export class Game {
 
 	/** Your ship: flown from the cockpit, so never drawn */
 	private createShip(isTarget: (entity: Entity) => boolean = isRocketTarget): PlayerShip {
-		const ship = new PlayerShip();
+		const ship = new PlayerShip(shipLook());
 		ship.visible = false;
 		ship.setPilot(this.pilot);
 		ship.rockets = ROCKET_CAPACITY; /* a full rack every level */

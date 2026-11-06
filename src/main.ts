@@ -1,17 +1,20 @@
 import { difficultyLevel } from "./difficulty.ts";
+import { lookName } from "./entity/player-ships.ts";
 import { Game, type LevelResult } from "./game.ts";
+import { Hangar } from "./hangar.ts";
 import { LEVELS } from "./levels.ts";
 import { Menu, type ResultAction } from "./menu.ts";
 import { Connection, type CloseReason } from "./net/connection.ts";
 import { invitedTo, OnlineMenu } from "./net/online-menu.ts";
 import { RECONNECT_GRACE, type ClientMessage, type MatchResult, type RoomInfo, type ServerMessage } from "./net/protocol.ts";
 import { Leaderboard, score } from "./scores.ts";
-import { effectsVolume, setEffectsVolume } from "./settings.ts";
+import { effectsVolume, setEffectsVolume, setShipLook, shipLook } from "./settings.ts";
 
 const game = new Game(document.querySelector<HTMLElement>("#game")!);
 const leaderboard = new Leaderboard();
 const menu = new Menu(LEVELS, leaderboard, effectsVolume());
 const online = new OnlineMenu(LEVELS);
+const hangar = new Hangar();
 
 function play(level: number): void {
 	menu.hideResult();
@@ -37,6 +40,21 @@ function resume(): void {
 	document.body.classList.add("playing");
 	game.resume();
 }
+
+hangar.onChange = look => {
+	setShipLook(look);
+	menu.showShip(lookName(look));
+	send({ type: "look", look });
+};
+menu.showShip(lookName(shipLook()));
+menu.onShip = () => {
+	menu.hideAll();
+	hangar.open(shipLook(), () => menu.showTitle());
+};
+online.onShip = () => {
+	online.hide();
+	hangar.open(shipLook(), () => { if (room) { showRoom(room); } });
+};
 
 menu.onStart = play;
 menu.onResume = resume;
@@ -133,8 +151,8 @@ online.onBack = () => {
 	online.hide();
 	menu.showTitle();
 };
-online.onCreate = name => connectThen(name, { type: "create", name, level: menu.selectedLevel, difficulty: difficultyLevel() });
-online.onJoin = (code, name) => connectThen(name, { type: "join", code, name });
+online.onCreate = name => connectThen(name, { type: "create", name, level: menu.selectedLevel, difficulty: difficultyLevel(), look: shipLook() });
+online.onJoin = (code, name) => connectThen(name, { type: "join", code, name, look: shipLook() });
 online.onSetup = setup => send({ type: "setup", ...setup });
 online.onStart = () => send({ type: "start" });
 online.onLeave = () => leaveRoom();
@@ -250,6 +268,7 @@ function receive(message: ServerMessage): void {
 			if (game.onlineRun == message.run) { break; } /* back after a dropped connection: the level went on */
 			menu.hideAll();
 			online.hide();
+			hangar.hide();
 			document.body.classList.add("playing");
 			game.startOnline(send, message, me!);
 		break;
@@ -263,7 +282,7 @@ function receive(message: ServerMessage): void {
 function showRoom(info: RoomInfo): void {
 	room = info;
 	game.pilots = info.players;
-	if (info.state == "playing" || (info.state == "over" && game.online)) { return; }
+	if (hangar.visible || info.state == "playing" || (info.state == "over" && game.online)) { return; }
 
 	if (game.online) { game.stop(); } /* back from a level */
 	document.body.classList.remove("playing");
@@ -285,6 +304,7 @@ function disconnected(why: string): void {
 /** Out of any room, to the screen for creating or joining one */
 function toMultiplayer(): void {
 	forgetRoom();
+	hangar.hide();
 	game.stop();
 	document.body.classList.remove("playing");
 	menu.hideAll();
@@ -304,7 +324,9 @@ function forgetRoom(): void {
 
 window.addEventListener("keydown", e => {
 	if (e.key == "Escape") {
-		if (menu.modalVisible) { /* settings or help */
+		if (hangar.visible) {
+			hangar.close();
+		} else if (menu.modalVisible) { /* settings or help */
 			menu.closeModal();
 		} else if (game.paused) {
 			resume();

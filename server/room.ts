@@ -29,6 +29,8 @@ export interface Member {
 	name: string;
 	/** Secret that lets the same browser take its place back on a new connection */
 	readonly token: string;
+	/** Which ship and colours they fly (src/entity/player-ships.ts) */
+	look: number;
 	/** Goes nowhere while their connection is down */
 	send(message: ServerMessage): void;
 }
@@ -160,7 +162,7 @@ export class Room {
 		return {
 			code: this.code,
 			host: this.host,
-			players: this.members.map(({ id, name }) => ({ id, name, away: this.away.has(id) })),
+			players: this.members.map(({ id, name, look }) => ({ id, name, look, away: this.away.has(id) })),
 			mode: this.mode,
 			level: this.levelIndex,
 			difficulty: this.difficulty,
@@ -243,6 +245,14 @@ export class Room {
 		const member = this.members.find(({ id }) => id == memberId);
 		if (!member) { return; }
 		member.name = cleanName(name);
+		this.broadcastRoom();
+	}
+
+	/** Between levels: a ship in flight keeps its looks */
+	setLook(memberId: number, look: number): void {
+		const member = this.members.find(({ id }) => id == memberId);
+		if (!member || this.state == "playing") { return; }
+		member.look = look;
 		this.broadcastRoom();
 	}
 
@@ -667,12 +677,13 @@ export class Room {
 		const enemies = level.enemies?.remaining ?? 0;
 		const pods = level.pods.filter(pod => !pod.dead).length;
 		const match = (level.match ? { match: { left: Math.max(0, round(level.match.timeLeft, 1)), frags: Object.fromEntries(level.match.frags) } } : {});
+		const looks = Object.fromEntries([...level.flyers.values()].map(({ member, ship }) => [this.id(ship), member.look]));
 		for (const { member, ship } of level.flyers.values()) {
 			const ev = this.queue
 				.filter(({ to, except }) => (to === undefined || to == member.id) && except != member.id)
 				.map(({ event }) => event);
 			const e = (rockets.size ? records.filter(([id]) => rockets.get(id) != member.id) : records);
-			member.send({ type: "snapshot", t, e, ev, enemies, pods, shields: Math.round(ship.shields.value), ship: this.id(ship), ...match });
+			member.send({ type: "snapshot", t, e, ev, enemies, pods, shields: Math.round(ship.shields.value), ship: this.id(ship), looks, ...match });
 		}
 		this.queue = [];
 	}

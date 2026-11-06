@@ -2,20 +2,20 @@ import { vec3 } from "gl-matrix";
 import { Color } from "../color.ts";
 import { line, shade, triangle, type Geometry } from "../geometry.ts";
 
-/* Enemy ships built from a few simple solids, flat planes and sticks (designed on the ship designs page) */
+/* Ships built from a few simple solids, flat planes and sticks (designed on the ship designs page); pilots' ships are in ./player-ships.ts */
 
-type Point = readonly [number, number, number];
+export type Point = readonly [number, number, number];
 
-type Role = "body" | "wing";
+export type Role = "body" | "wing" | "glass" | "glow";
 
 /** The tightest solid around the points */
-interface Solid { readonly solid: readonly Point[]; readonly role: Role }
-/** A flat convex outline, seen from both sides */
-interface Flat { readonly flat: readonly Point[]; readonly role: Role }
+export interface Solid { readonly solid: readonly Point[]; readonly role: Role }
+/** A flat outline, seen from both sides: a fan around its first point */
+export interface Flat { readonly flat: readonly Point[]; readonly role: Role }
 /** Thin lines */
-interface Sticks { readonly lines: ReadonlyArray<readonly [Point, Point]> }
+export interface Sticks { readonly lines: ReadonlyArray<readonly [Point, Point]> }
 
-type Piece = Solid | Flat | Sticks;
+export type Piece = Solid | Flat | Sticks;
 
 export interface ShipStyle {
 	readonly body: Color;
@@ -23,17 +23,27 @@ export interface ShipStyle {
 	/** Lines along the creases between faces; null for none */
 	readonly edges: Color | null;
 	readonly sticks: Color;
+	/** Canopies; the body's colour when not given */
+	readonly glass?: Color;
+	/** Engine mouths, which light themselves; the body's colour when not given */
+	readonly glow?: Color;
+	/** Faces looking down, on the body; null or not given for none */
+	readonly belly?: Color | null;
+	/** The belly colour goes on faces of the wing colour too (wings, claws) */
+	readonly bellyOnWings?: boolean;
 }
 
 /** Faces meeting at a sharper angle than this get an edge line */
 const CREASE = Math.cos(10 * Math.PI / 180);
+/** Faces whose normal points down more than this count as the underside */
+const UNDER = -0.2;
 
-const sub = (a: Point, b: Point): Point => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-const cross = (a: Point, b: Point): Point => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-const dot = (a: Point, b: Point) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const length = (a: Point) => Math.sqrt(dot(a, a));
+export const sub = (a: Point, b: Point): Point => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+export const cross = (a: Point, b: Point): Point => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+export const dot = (a: Point, b: Point) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+export const length = (a: Point) => Math.sqrt(dot(a, a));
 const scaled = (a: Point, s: number): Point => [a[0] * s, a[1] * s, a[2] * s];
-function normalize(a: Point): Point | null {
+export function normalize(a: Point): Point | null {
 	const l = length(a);
 	return (l > 1e-12 ? scaled(a, 1 / l) : null);
 }
@@ -92,10 +102,16 @@ export function buildShip(pieces: readonly Piece[], radius: number, style: ShipS
 	const scale = radius / Math.max(...pieces.flatMap(pointsOf).map(length));
 	const geometries: Geometry[] = [];
 
+	const faceColor = (role: Role, normal: Point): Color => {
+		if (role == "glass") { return style.glass ?? style.body; }
+		const below = normal[1] < UNDER && style.belly && (role == "body" || style.bellyOnWings);
+		return (below ? style.belly! : role == "wing" ? style.wing : style.body);
+	};
+
 	const addFace = (corners: readonly Point[], role: Role): Point | null => {
 		const normal = normalize(cross(sub(corners[1], corners[0]), sub(corners[2], corners[0])));
 		if (!normal) { return null; }
-		const color = shade(role == "wing" ? style.wing : style.body, toVec(normal));
+		const color = (role == "glow" ? (style.glow ?? style.body) : shade(faceColor(role, normal), toVec(normal)));
 		geometries.push(triangle(toVec(corners[0]), toVec(corners[1]), toVec(corners[2]), color));
 		return normal;
 	};
@@ -141,9 +157,9 @@ export function buildShip(pieces: readonly Piece[], radius: number, style: ShipS
 
 /* Building blocks; +X right, +Y up, nose towards -Z (before scaling) */
 
-const mirror = (points: readonly Point[]): Point[] => points.map(([x, y, z]) => [-x, y, z]);
+export const mirror = (points: readonly Point[]): Point[] => points.map(([x, y, z]) => [-x, y, z]);
 /** An outline of [x, z] points, flat and thickened up and down */
-const plate = (outline: ReadonlyArray<readonly [number, number]>, thickness: number): Point[] =>
+export const plate = (outline: ReadonlyArray<readonly [number, number]>, thickness: number): Point[] =>
 	outline.flatMap(([x, z]): Point[] => [[x, thickness / 2, z], [x, -thickness / 2, z]]);
 /** Corners of a box between two points */
 const box = ([x1, y1, z1]: Point, [x2, y2, z2]: Point): Point[] =>
@@ -226,20 +242,6 @@ export const pirateShape = once(() => {
 		sticks([0.6, 0, 0.1], [0.6, 0, -0.65]),
 		sticks([0.22, -0.035, 0.05], [0.22, -0.6, -0.15]),
 	], 1.25, { body: grey, wing: grey, edges: null, sticks: new Color(0xffffff) });
-});
-
-/**
- * Player ship: a flat arrowhead (two halves, notched at the back) on a low keel; dark, with edges in the HUD's green.
- * Your own is never drawn (cockpit view); in online play this is how teammates look. As big as the hull it hits with.
- */
-export const playerShape = once(() => {
-	const half: Point[] = [[0, 0, -1.2], [0.8, 0, 0.75], [0, 0, 0.35]];
-	const dark = new Color(0x333842);
-	return buildShip([
-		{ flat: half, role: "wing" },
-		{ flat: mirror(half), role: "wing" },
-		body([[0, 0.02, -0.75], [0.13, 0.02, 0.3], [-0.13, 0.02, 0.3], [0, 0.17, 0.2], [0, -0.1, 0.25]]),
-	], 0.75, { body: dark, wing: dark, edges: new Color(0x6eff8c), sticks: new Color(0x6eff8c) });
 });
 
 /**

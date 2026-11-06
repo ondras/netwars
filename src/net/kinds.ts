@@ -51,8 +51,9 @@ let placeholders: { entity: Entity; pod: Pod } | null = null;
 /**
  * A copy of an entity simulated on the server, to be placed from snapshots: it looks and counts as the real thing
  * (radar, rocket lock, collisions) but does not move by itself
+ * @param look Which ship and colours, for another pilot's ship
  */
-export function createCopy(kind: EntityKind): Entity {
+export function createCopy(kind: EntityKind, look?: number): Entity {
 	placeholders ??= { entity: new Entity(), pod: new Pod() };
 	const entity = ((): Entity => {
 		switch (kind) {
@@ -63,7 +64,7 @@ export function createCopy(kind: EntityKind): Entity {
 			case "gunship": return new Gunship([]);
 			case "missile":
 			case "rocket": return new Missile(vec3.create(), vec3.fromValues(0, 0, -1), placeholders.entity, placeholders.entity);
-			case "player": return new PlayerShip();
+			case "player": return new PlayerShip(look);
 			case "grapple": return new Grapple(placeholders.entity, placeholders.pod);
 			default: return new Powerup(kind.slice("powerup-".length) as PowerupKind, []);
 		}

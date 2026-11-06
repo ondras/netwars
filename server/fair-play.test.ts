@@ -152,7 +152,7 @@ async function play(connection: Connection, seconds: number): Promise<{ room: Ro
 	const up = [new Wire<ClientMessage>(connection), new Wire<ClientMessage>(connection)];
 	/* one aims, the other is the target: both chase each other all the same in the end */
 	const browsers = [new Browser(1, up[0], clock, true), new Browser(2, up[1], clock, false)];
-	const member = (i: number): Member => ({ id: i + 1, name: `Pilot ${i + 1}`, token: `t${i}`, send: message => down[i].send(now, message) });
+	const member = (i: number): Member => ({ id: i + 1, name: `Pilot ${i + 1}`, token: `t${i}`, look: 0, send: message => down[i].send(now, message) });
 
 	const room = new Room("ABCD", member(0), 0, "normal");
 	room.join(member(1));

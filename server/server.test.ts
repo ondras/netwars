@@ -63,6 +63,20 @@ class Client {
 }
 
 describe("game server", () => {
+	it("keeps a pilot's ship, ignoring looks that do not exist", async () => {
+		const host = await Client.open();
+		host.send({ type: "create", name: "Ann", level: 0, difficulty: "normal", look: 5 });
+		const { room } = await host.next("welcome");
+		expect(room.players[0].look).toBe(5);
+
+		host.send({ type: "look", look: 9999 });
+		host.send({ type: "look", look: 6 });
+		const told = await host.next("room", message => message.room.players[0].look != 5);
+		expect(told.room.players[0].look).toBe(6);
+		host.send({ type: "leave" });
+		host.close();
+	});
+
 	it("lets one browser create a room, another join it by code, and both play", async () => {
 		const host = await Client.open();
 		const guest = await Client.open();

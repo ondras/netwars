@@ -50,6 +50,8 @@ export interface PlayerInfo {
 	name: string;
 	/** Their connection dropped; they may come back within RECONNECT_GRACE */
 	away: boolean;
+	/** Which ship and colours they fly (src/entity/player-ships.ts) */
+	look: number;
 }
 
 export type RoomState = "lobby" | "playing" | "over";
@@ -112,9 +114,11 @@ export interface HitReport {
 }
 
 export type ClientMessage =
-	| { type: "create"; name: string; level: number; difficulty: DifficultyLevel }
-	| { type: "join"; code: string; name: string }
+	| { type: "create"; name: string; level: number; difficulty: DifficultyLevel; look?: number }
+	| { type: "join"; code: string; name: string; look?: number }
 	| { type: "name"; name: string }
+	/** Between levels: fly another ship, or the same one in other colours */
+	| { type: "look"; look: number }
 	/** Host, in the lobby */
 	| ({ type: "setup" } & RoomSetup)
 	/** Host: start a level (the one set up when not given) */
@@ -177,6 +181,8 @@ export interface Snapshot {
 	shields: number;
 	/** Your ship's id: not among the entities while it is destroyed, a new one once you fly again */
 	ship: number;
+	/** Id of a pilot's ship → which ship and colours it is */
+	looks: Record<number, number>;
 	match?: MatchState;
 }
 

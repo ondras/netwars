@@ -1,8 +1,12 @@
 import { DIFFICULTIES, isDifficultyLevel, type DifficultyLevel } from "../difficulty.ts";
+import { lookName, shipGeometries } from "../entity/player-ships.ts";
 import type { LevelConfig } from "../levels.ts";
+import { shipIcon } from "../render/ship-icon.ts";
 import { ARENA_SIZE, CODE_LENGTH, FRAG_LIMITS, GAME_MODES, MAX_PLAYERS, TIME_LIMITS, type GameMode, type RoomInfo, type RoomSetup } from "./protocol.ts";
 
 const MODE_LABELS: Record<GameMode, string> = { coop: "Co-op", deathmatch: "Deathmatch" };
+
+const PILOT_ICON_SIZE = 28;
 
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -29,6 +33,8 @@ export class OnlineMenu {
 	onSetup: ((setup: RoomSetup) => void) | null = null;
 	onStart: (() => void) | null = null;
 	onLeave: (() => void) | null = null;
+	/** The button for picking your ship pressed */
+	onShip: (() => void) | null = null;
 
 	private readonly panel = element<HTMLElement>("online");
 	private readonly backButton = element<HTMLButtonElement>("online-back");
@@ -83,6 +89,7 @@ export class OnlineMenu {
 
 		element<HTMLButtonElement>("lobby-start").onclick = () => this.onStart?.();
 		element<HTMLButtonElement>("lobby-leave").onclick = () => this.onLeave?.();
+		element<HTMLButtonElement>("lobby-ship").onclick = () => this.onShip?.();
 		const copy = element<HTMLButtonElement>("lobby-copy");
 		copy.onclick = () => {
 			const link = element<HTMLInputElement>("lobby-link");
@@ -140,12 +147,16 @@ export class OnlineMenu {
 		element<HTMLInputElement>("lobby-link").value = inviteLink(room.code);
 		if (firstShow) { element<HTMLButtonElement>("lobby-copy").textContent = "Copy link"; }
 
-		element<HTMLElement>("lobby-players").replaceChildren(...room.players.map(({ id, name, away }) => {
+		element<HTMLElement>("lobby-players").replaceChildren(...room.players.map(({ id, name, away, look }) => {
 			const item = document.createElement("li");
+			item.title = lookName(look);
 			const tags = [id == room.host ? "host" : "", id == me ? "you" : "", away ? "reconnecting…" : ""].filter(Boolean);
-			item.textContent = name + (tags.length ? ` (${tags.join(", ")})` : "");
+			item.innerHTML = shipIcon(shipGeometries(look), PILOT_ICON_SIZE);
+			item.append(name + (tags.length ? ` (${tags.join(", ")})` : ""));
 			return item;
 		}));
+		const mine = room.players.find(({ id }) => id == me);
+		if (mine) { element<HTMLButtonElement>("lobby-ship").textContent = lookName(mine.look); }
 		element<HTMLElement>("lobby-count").textContent = `${room.players.length} of ${MAX_PLAYERS} pilots`;
 
 		this.modeSelect.value = room.mode;
