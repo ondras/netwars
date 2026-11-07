@@ -7,6 +7,8 @@
   "scripts": {
     "dev": "vite",
     "start": "node server/main.ts",
+    "arena": "node server/arena.ts",
+    "analyze": "node server/analyze.ts",
     "build": "tsc && tsc -p server && vite build",
     "typecheck": "tsc && tsc -p server",
     "test": "vitest run",

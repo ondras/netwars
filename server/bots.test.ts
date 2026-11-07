@@ -4,7 +4,10 @@ import { botTraits } from "../src/bot.ts";
 import type { PlayerShip } from "../src/entity/player-ship.ts";
 import { MAX_PLAYERS, type ServerMessage, type Snapshot } from "../src/net/protocol.ts";
 import { stubModels } from "../src/testing.ts";
+import { analyze, report } from "./analyze.ts";
+import { fight, tournament } from "./arena.ts";
 import type { Allowance } from "./checks.ts";
+import type { LogEntry } from "./match-log.ts";
 import { Room, type Member } from "./room.ts";
 
 beforeAll(stubModels);
@@ -161,5 +164,47 @@ describe("bots in a room", () => {
 			expect(Math.abs(engine.pitch.control)).toBeLessThanOrEqual(1);
 			expect(Math.abs(engine.speed.value)).toBeLessThanOrEqual(15.001);
 		}
+	});
+});
+
+describe("the arena", () => {
+	it("runs a whole match of bots: they find each other and score", () => {
+		const { frags, outcome } = fight([botTraits(), botTraits()], { fragLimit: 3, timeLimit: 5 });
+		expect(outcome.outcome).toBe("match-over");
+		expect(frags[0] + frags[1]).toBeGreaterThan(0);
+	});
+
+	it("gives better aim more frags, all else being equal", () => {
+		const { frags } = tournament([botTraits(1, 0.5), botTraits(0, 0.5)], 6, { fragLimit: 10, timeLimit: 3 });
+		expect(frags[0]).toBeGreaterThan(frags[1]);
+	});
+});
+
+describe("recordings", () => {
+	it("have the same numbers for every pilot, and the analysis reads them", () => {
+		const entries: LogEntry[] = [];
+		let closed = 0;
+		fight([botTraits(0.8, 0.8), botTraits(0.3, 0.3)], {
+			fragLimit: 5,
+			timeLimit: 3,
+			logs: () => ({ write: entry => { entries.push(entry); }, close: () => { closed++; } }),
+		});
+
+		expect(closed).toBe(1);
+		const kinds = new Set(entries.map(({ k }) => k));
+		for (const kind of ["start", "f", "shot", "hit", "kill", "end"] as const) { expect(kinds, kind).toContain(kind); }
+		expect(entries[0].k).toBe("start");
+		expect(entries.at(-1)!.k).toBe("end");
+
+		const [good, poor] = analyze(entries);
+		for (const stats of [good, poor]) {
+			expect(stats.flying).toBeGreaterThan(5);
+			expect(stats.shots).toBeGreaterThan(0);
+			expect(stats.hitRate).toBeGreaterThan(0);
+			expect(stats.hitRate).toBeLessThanOrEqual(1);
+			expect(stats.speed).toBeGreaterThan(5);
+			expect(stats.speed).toBeLessThanOrEqual(23);
+		}
+		expect(report([good, poor])).toContain("hit rate");
 	});
 });
