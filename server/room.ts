@@ -22,6 +22,7 @@ import {
 import type { Pilot } from "../src/pilot.ts";
 import { cleanName } from "../src/scores.ts";
 import { Allowance, hitFits, PLAYER_GUN, REWIND_LIMIT, rocketFits, shotFits, ViewHistory, type FiredShot } from "./checks.ts";
+import type { LogEntry, MatchLog, MatchLogs } from "./match-log.ts";
 
 /** Someone in a room, as rooms see them; their connection may drop and come back */
 export interface Member {
@@ -72,6 +73,8 @@ interface Flyer {
 	readonly shots: Map<number, FiredShot>;
 	/** Deathmatch: time until they fly again (s); null while flying */
 	respawn: number | null;
+	/** Their ship's shields when last looked at, for the recording */
+	shields: number;
 }
 
 /** Deathmatch: what ends it, and how it stands */
@@ -100,6 +103,8 @@ interface Level {
 	readonly history: ViewHistory;
 	/** Null in co-op */
 	readonly match: Match | null;
+	/** The recording; null when not recording, or once it is over */
+	log: MatchLog | null;
 }
 
 /** An event for everyone, for one member only (`to`), or for everyone but one (`except`) */
@@ -149,9 +154,11 @@ export class Room {
 	private queue: Queued[] = [];
 	/** Shots already sent as events */
 	private readonly announced = new WeakSet<Entity>();
+	private readonly logs: MatchLogs | null;
 
-	constructor(code: string, host: Member, levelIndex: number, difficulty: DifficultyLevel) {
+	constructor(code: string, host: Member, levelIndex: number, difficulty: DifficultyLevel, logs: MatchLogs | null = null) {
 		this.code = code;
+		this.logs = logs;
 		this.host = host.id;
 		this.levelIndex = levelIndex;
 		this.difficulty = difficulty;
@@ -203,6 +210,7 @@ export class Room {
 
 		if (!this.members.length) {
 			this.logRefused();
+			this.closeLog();
 			this.level = null;
 			return true;
 		}
@@ -397,7 +405,7 @@ export class Room {
 			} else {
 				ship.position[0] = (i - (this.members.length - 1) / 2) * START_GAP;
 			}
-			flyers.set(member.id, { member, ship, pilot, allowance: new Allowance(ship), shots: new Map(), respawn: null });
+			flyers.set(member.id, { member, ship, pilot, allowance: new Allowance(ship), shots: new Map(), respawn: null, shields: ship.shields.value });
 			loop.players.push(ship);
 		});
 
@@ -405,7 +413,13 @@ export class Room {
 		loop.onRemove = entity => this.onRemove(entity);
 		loop.onStep = () => this.afterStep();
 		this.queue = [];
-		const level = { run: ++this.runs, index, difficulty: this.difficulty, loop, flyers, steps: 0, outcome: null, result: null, history: new ViewHistory() };
+		const run = ++this.runs;
+		const log = this.logs?.(this.code, run) ?? null;
+		log?.write({
+			k: "start", time: new Date().toISOString(), room: this.code, run, mode: this.mode, size: loop.size,
+			pilots: this.members.map(({ id, name, look }) => ({ id, name, bot: false, look })),
+		});
+		const level = { run, index, difficulty: this.difficulty, loop, flyers, steps: 0, outcome: null, result: null, history: new ViewHistory(), log };
 
 		if (deathmatch) {
 			loop.scene.push(...loop.players, new PowerupSpawner(loop.players, ARENA_POWERUPS));
@@ -448,6 +462,7 @@ export class Room {
 		this.placeInArena(ship, loop);
 		flyer.pilot.target = flyer.pilot.yaw = flyer.pilot.pitch = 0;
 		flyer.allowance.restart(ship);
+		this.log({ k: "spawn", t: this.time, by: flyer.member.id });
 		flyer.ship = ship;
 		flyer.respawn = null;
 		loop.spawn(ship);
@@ -480,6 +495,7 @@ export class Room {
 
 		const event: GameEvent = ["shot", now, ...rounded(shot.p as vec3), ...rounded(shot.v as vec3), PLAYER_GUN.color, PLAYER_GUN.lifetime, this.id(ship), 0];
 		this.queue.push({ event, except: flyer.member.id });
+		this.log({ k: "shot", t: now, by: flyer.member.id, p: shot.p, v: shot.v });
 	}
 
 	/** A rocket the ship has and can have aimed flies here, like any other missile; the pilot's browser shows its own */
@@ -502,6 +518,7 @@ export class Room {
 		const nose = vec3.transformQuat(vec3.create(), vec3.fromValues(0, 0, -1), ship.orientation);
 		const missile = new Missile(rocket.p as vec3, nose, ship, target, ROCKET);
 		level.loop.spawn(missile);
+		this.log({ k: "rocket", t: this.time, by: member.id });
 		this.queue.push({ event: ["sound", this.time, "launch", ...rounded(missile.position, 1)], except: member.id });
 	}
 
@@ -563,7 +580,10 @@ export class Room {
 
 		if (entity instanceof Powerup && entity.collector) {
 			const member = this.memberFlying(entity.collector);
-			if (member !== undefined) { this.queue.push({ event: ["powerup", this.time, entity.kind], to: member }); }
+			if (member !== undefined) {
+				this.queue.push({ event: ["powerup", this.time, entity.kind], to: member });
+				this.log({ k: "powerup", t: this.time, by: member, kind: entity.kind });
+			}
 		}
 
 		if (entity instanceof PlayerShip && entity.exploded) { this.onShipDestroyed(entity); }
@@ -580,8 +600,10 @@ export class Room {
 		if (flyer) { flyer.respawn = RESPAWN_DELAY; }
 
 		const killer = (ship.lastHitBy ? this.pilots.get(ship.lastHitBy) : undefined);
-		if (killer === undefined || killer == victim || !level.flyers.has(killer)) { return; }
-		match.frags.set(killer, (match.frags.get(killer) ?? 0) + 1);
+		const counts = (killer !== undefined && killer != victim && level.flyers.has(killer));
+		this.log({ k: "kill", t: this.time, by: (counts ? killer! : null), on: victim });
+		if (!counts) { return; }
+		match.frags.set(killer!, (match.frags.get(killer!) ?? 0) + 1);
 		this.queue.push({ event: ["frag", this.time, killer, victim] });
 	}
 
@@ -601,6 +623,8 @@ export class Room {
 			];
 			this.queue.push({ event });
 		}
+
+		if (level.log) { this.logHits(level, t); }
 
 		let matchResult: MatchResult | undefined;
 		let ended = false;
@@ -631,6 +655,8 @@ export class Room {
 			for (const { member } of level.flyers.values()) { member.send(result); }
 			this.broadcastRoom();
 			this.logRefused();
+			this.log({ k: "end", t, reason: matchResult?.reason ?? level.outcome! });
+			this.closeLog();
 		}
 	}
 
@@ -659,7 +685,46 @@ export class Room {
 		if (moves + shots + rockets + hits) { console.info(`Room ${this.code}: refused ${moves} moves, ${shots} shots, ${rockets} rockets, ${hits} hits`); }
 	}
 
+	private log(entry: LogEntry): void {
+		this.level?.log?.write(entry);
+	}
+
+	private closeLog(): void {
+		if (!this.level) { return; }
+		this.level.log?.close();
+		this.level.log = null;
+	}
+
+	/** Shields lost since the last step, and to whom */
+	private logHits(level: Level, t: number): void {
+		for (const [id, flyer] of level.flyers) {
+			const { ship } = flyer;
+			const shields = ship.shields.value;
+			if (shields < flyer.shields) {
+				const by = (ship.lastHitBy ? this.pilots.get(ship.lastHitBy) : undefined) ?? null;
+				this.log({ k: "hit", t, by, on: id, damage: flyer.shields - shields });
+			}
+			flyer.shields = shields;
+		}
+	}
+
+	/** Where every ship is and how it is being flown, the same for people and bots */
+	private logFrame(level: Level, t: number): void {
+		const s: number[][] = [];
+		for (const [id, { ship }] of level.flyers) {
+			if (ship.dead) { continue; }
+			const { speed, yaw, pitch } = ship.engine;
+			const q = ship.orientation;
+			s.push([
+				id, ...rounded(ship.position), round(q[0], 4), round(q[1], 4), round(q[2], 4), round(q[3], 4),
+				Math.round(ship.shields.value), round(speed.value, 2), round(speed.target, 2), round(yaw.control, 3), round(pitch.control, 3),
+			]);
+		}
+		this.log({ k: "f", t, s });
+	}
+
 	private sendSnapshots(level: Level, t: number): void {
+		if (level.log) { this.logFrame(level, t); }
 		const records: EntityRecord[] = [];
 		/** Rockets in flight → who launched them: a browser shows its own by itself */
 		const rockets = new Map<number, number | undefined>();

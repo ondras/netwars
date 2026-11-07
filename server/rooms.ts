@@ -1,5 +1,6 @@
 import type { DifficultyLevel } from "../src/difficulty.ts";
 import { CODE_ALPHABET, CODE_LENGTH } from "../src/net/protocol.ts";
+import type { MatchLogs } from "./match-log.ts";
 import { Room, type Member } from "./room.ts";
 
 /** Most rooms open at once; protects the server from runaway room creation */
@@ -9,6 +10,12 @@ const MAX_ROOMS = 500;
 export class Rooms {
 	private readonly rooms = new Map<string, Room>();
 	private nextMemberId = 1;
+	private readonly logs: MatchLogs | null;
+
+	/** @param logs Records every match, if given */
+	constructor(logs: MatchLogs | null = null) {
+		this.logs = logs;
+	}
 
 	get count(): number {
 		return this.rooms.size;
@@ -26,7 +33,7 @@ export class Rooms {
 			code = Array.from({ length: CODE_LENGTH }, () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]).join("");
 		} while (this.rooms.has(code));
 
-		const room = new Room(code, host, level, difficulty);
+		const room = new Room(code, host, level, difficulty, this.logs);
 		this.rooms.set(code, room);
 		return room;
 	}

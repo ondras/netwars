@@ -13,6 +13,7 @@ import {
 } from "../src/net/protocol.ts";
 import { setModelSource } from "../src/nsh.ts";
 import { cleanName } from "../src/scores.ts";
+import { fileLogs } from "./match-log.ts";
 import type { Member, Room } from "./room.ts";
 import { Rooms } from "./rooms.ts";
 
@@ -25,6 +26,8 @@ export interface GameServerOptions {
 	modelsDir: string;
 	/** How often rooms are advanced (ms) */
 	tick?: number;
+	/** Where to record every match to, one file each; nothing is recorded when not given */
+	recordDir?: string;
 }
 
 export interface GameServer {
@@ -54,10 +57,10 @@ const CONTENT_TYPES: Record<string, string> = {
 };
 
 /** Serves the game over HTTP and its rooms over a WebSocket at NET_PATH */
-export async function startGameServer({ port, staticDir, modelsDir, tick = 10 }: GameServerOptions): Promise<GameServer> {
+export async function startGameServer({ port, staticDir, modelsDir, tick = 10, recordDir }: GameServerOptions): Promise<GameServer> {
 	setModelSource(name => readFile(join(modelsDir, `${name}.nsh`), "latin1"));
 
-	const rooms = new Rooms();
+	const rooms = new Rooms(recordDir ? fileLogs(recordDir) : null);
 	const http = createServer((request, response) => {
 		serveStatic(staticDir, request, response).catch(() => {
 			response.writeHead(500).end();
