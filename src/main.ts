@@ -156,6 +156,8 @@ online.onJoin = (code, name) => connectThen(name, { type: "join", code, name, lo
 online.onSetup = setup => send({ type: "setup", ...setup });
 online.onStart = () => send({ type: "start" });
 online.onLeave = () => leaveRoom();
+online.onAddBot = () => send({ type: "addBot" });
+online.onRemoveBot = id => send({ type: "removeBot", id });
 
 /** Connect (unless connected) and send the first message */
 async function connectThen(name: string, message: ClientMessage): Promise<void> {

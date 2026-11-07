@@ -52,6 +52,8 @@ export interface PlayerInfo {
 	away: boolean;
 	/** Which ship and colours they fly (src/entity/player-ships.ts) */
 	look: number;
+	/** Not a person */
+	bot?: boolean;
 }
 
 export type RoomState = "lobby" | "playing" | "over";
@@ -121,6 +123,9 @@ export type ClientMessage =
 	| { type: "look"; look: number }
 	/** Host, in the lobby */
 	| ({ type: "setup" } & RoomSetup)
+	/** Host, in the lobby of a deathmatch */
+	| { type: "addBot" }
+	| { type: "removeBot"; id: number }
 	/** Host: start a level (the one set up when not given) */
 	| { type: "start"; level?: number }
 	/** Host: back to the lobby after a level */

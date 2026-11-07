@@ -1,11 +1,13 @@
 import { quat, vec3, type ReadonlyVec3 } from "gl-matrix";
 import type { SoundName } from "../src/audio/sounds.ts";
+import { BotPilot, botTraits, type BotTraits } from "../src/bot.ts";
 import { resolveCollisions, resolveHits } from "../src/collision.ts";
 import { DIFFICULTIES, type DifficultyLevel } from "../src/difficulty.ts";
 import { explode } from "../src/entity/debris.ts";
 import type { Entity } from "../src/entity/entity.ts";
 import { Missile } from "../src/entity/missile.ts";
 import { PlayerShip } from "../src/entity/player-ship.ts";
+import { LOOK_COUNT } from "../src/entity/player-ships.ts";
 import { Pod } from "../src/entity/pod.ts";
 import { Powerup } from "../src/entity/powerup.ts";
 import { ROCKET, ROCKET_CAPACITY, Ship } from "../src/entity/ship.ts";
@@ -32,9 +34,13 @@ export interface Member {
 	readonly token: string;
 	/** Which ship and colours they fly (src/entity/player-ships.ts) */
 	look: number;
+	/** Not a person but a bot flown here, this way */
+	bot?: BotTraits;
 	/** Goes nowhere while their connection is down */
 	send(message: ServerMessage): void;
 }
+
+const BOT_NAMES = ["Ada", "Bix", "Cato", "Dot", "Echo", "Finn", "Gus", "Hex"];
 
 type StateMessage = Extract<ClientMessage, { type: "state" }>;
 
@@ -61,13 +67,18 @@ class RemotePilot implements Pilot {
 		ship.engine.pitch.control = this.pitch;
 		ship.trigger = false;
 	}
+
+	/** Flying a new ship: hands off until the browser says otherwise */
+	reset(): void {
+		this.target = this.yaw = this.pitch = 0;
+	}
 }
 
 interface Flyer {
 	readonly member: Member;
 	/** The ship they fly now; destroyed in a deathmatch, a new one takes its place */
 	ship: PlayerShip;
-	readonly pilot: RemotePilot;
+	readonly pilot: RemotePilot | BotPilot;
 	readonly allowance: Allowance;
 	/** Shots accepted that have not hit anything yet, by ShotReport.n, oldest first */
 	readonly shots: Map<number, FiredShot>;
@@ -154,6 +165,8 @@ export class Room {
 	private queue: Queued[] = [];
 	/** Shots already sent as events */
 	private readonly announced = new WeakSet<Entity>();
+	/** Ships flown here rather than by a browser */
+	private readonly flownHere = new WeakSet<Entity>();
 	private readonly logs: MatchLogs | null;
 
 	constructor(code: string, host: Member, levelIndex: number, difficulty: DifficultyLevel, logs: MatchLogs | null = null) {
@@ -169,7 +182,7 @@ export class Room {
 		return {
 			code: this.code,
 			host: this.host,
-			players: this.members.map(({ id, name, look }) => ({ id, name, look, away: this.away.has(id) })),
+			players: this.members.map(({ id, name, look, bot }) => ({ id, name, look, away: this.away.has(id), ...(bot ? { bot: true } : {}) })),
 			mode: this.mode,
 			level: this.levelIndex,
 			difficulty: this.difficulty,
@@ -181,8 +194,13 @@ export class Room {
 
 	/** @returns Why the member cannot join, or null when they joined */
 	join(member: Member): string | null {
-		if (this.members.length >= MAX_PLAYERS) { return `Room ${this.code} is full: ${MAX_PLAYERS} pilots at most.`; }
 		if (this.state == "playing") { return `Room ${this.code} is in the middle of a level. Try again when it ends.`; }
+		if (this.members.length >= MAX_PLAYERS) {
+			/* a person takes the place of a bot */
+			const lastBot = this.members.filter(({ bot }) => bot).at(-1);
+			if (!lastBot) { return `Room ${this.code} is full: ${MAX_PLAYERS} pilots at most.`; }
+			this.members.splice(this.members.indexOf(lastBot), 1);
+		}
 		this.members.push(member);
 		this.welcome(member);
 		this.broadcastRoom(member.id);
@@ -208,10 +226,11 @@ export class Room {
 			this.level!.match?.frags.delete(memberId);
 		}
 
-		if (!this.members.length) {
+		if (!this.members.some(({ bot }) => !bot)) { /* nobody left but bots */
 			this.logRefused();
 			this.closeLog();
 			this.level = null;
+			this.members.length = 0;
 			return true;
 		}
 		this.pickHost();
@@ -225,7 +244,7 @@ export class Room {
 		this.away.set(memberId, 0);
 		const flyer = this.level?.flyers.get(memberId);
 		if (flyer) {
-			flyer.pilot.yaw = flyer.pilot.pitch = 0;
+			if (flyer.pilot instanceof RemotePilot) { flyer.pilot.yaw = flyer.pilot.pitch = 0; }
 			flyer.allowance.release();
 		}
 		this.pickHost();
@@ -267,12 +286,41 @@ export class Room {
 	/** Host, between levels */
 	setup(memberId: number, { mode, level, difficulty, fragLimit, timeLimit }: RoomSetup): void {
 		if (memberId != this.host || this.state == "playing") { return; }
+		if (mode != "deathmatch") { this.removeBots(); }
 		this.mode = mode;
 		this.levelIndex = level;
 		this.difficulty = difficulty;
 		this.fragLimit = fragLimit;
 		this.timeLimit = timeLimit;
 		this.broadcastRoom();
+	}
+
+	/**
+	 * Host, between levels: a bot joins the fight, for a deathmatch only
+	 * @param id A member id nobody else has
+	 */
+	addBot(memberId: number, id: number, traits: BotTraits = botTraits()): void {
+		if (memberId != this.host || this.state == "playing" || this.mode != "deathmatch" || this.members.length >= MAX_PLAYERS) { return; }
+		const taken = new Set(this.members.map(({ name }) => name));
+		const name = BOT_NAMES.find(candidate => !taken.has(candidate)) ?? "Bot";
+		/* an empty token cannot be resumed; what it is sent goes nowhere */
+		this.members.push({ id, name, token: "", look: Math.floor(Math.random() * LOOK_COUNT), bot: traits, send() {} });
+		this.broadcastRoom();
+	}
+
+	/** Host, between levels */
+	removeBot(memberId: number, id: number): void {
+		if (memberId != this.host || this.state == "playing") { return; }
+		const index = this.members.findIndex(member => member.id == id && member.bot);
+		if (index < 0) { return; }
+		this.members.splice(index, 1);
+		this.broadcastRoom();
+	}
+
+	private removeBots(): void {
+		for (let i = this.members.length - 1; i >= 0; i--) {
+			if (this.members[i].bot) { this.members.splice(i, 1); }
+		}
 	}
 
 	/** Host: start a level (the one set up when not given) */
@@ -299,7 +347,7 @@ export class Room {
 		if (!level || !flyer) { return; }
 
 		if (!flyer.ship.dead) {
-			if (validShip(state)) { this.fly(flyer, state); }
+			if (validShip(state) && flyer.pilot instanceof RemotePilot) { this.fly(flyer, flyer.pilot, state); }
 			for (const shot of (Array.isArray(shots) ? shots.slice(0, MAX_SHOTS) : [])) { this.fired(flyer, shot); }
 			for (const rocket of (Array.isArray(rockets) ? rockets.slice(0, MAX_ROCKETS) : [])) { this.launched(level, flyer, rocket); }
 		}
@@ -332,9 +380,10 @@ export class Room {
 
 	/** The host stays while connected; otherwise the first member who is */
 	private pickHost(): void {
-		const present = (id: number) => this.members.some(member => member.id == id) && !this.away.has(id);
+		const people = this.members.filter(({ bot }) => !bot);
+		const present = (id: number) => people.some(member => member.id == id) && !this.away.has(id);
 		if (present(this.host)) { return; }
-		this.host = (this.members.find(({ id }) => present(id)) ?? this.members[0]).id;
+		this.host = (people.find(({ id }) => present(id)) ?? people[0]).id;
 	}
 
 	/** The level, for one member: as it starts, or as it is now for one who comes back */
@@ -375,11 +424,12 @@ export class Room {
 	}
 
 	/** A ship ready to fly, not in the scene yet */
-	private createShip(memberId: number, pilot: RemotePilot): PlayerShip {
+	private createShip(memberId: number, pilot: RemotePilot | BotPilot): PlayerShip {
 		const ship = new PlayerShip();
 		ship.rockets = ROCKET_CAPACITY; /* as the browsers start */
 		ship.setPilot(pilot);
 		this.pilots.set(ship, memberId);
+		if (pilot instanceof BotPilot) { this.flownHere.add(ship); }
 		return ship;
 	}
 
@@ -393,12 +443,16 @@ export class Room {
 		/* players' ships are moved by their browsers, which also handle their bumps */
 		loop.rules = (scene, world) => {
 			resolveHits(scene, world);
-			resolveCollisions(scene.filter(entity => !(entity instanceof PlayerShip)), world);
+			if (deathmatch) {
+				resolveCollisions(scene, world, ship => !(ship instanceof PlayerShip) || this.flownHere.has(ship)); /* bots bump into the ships of people, who stay put here */
+			} else {
+				resolveCollisions(scene.filter(entity => !(entity instanceof PlayerShip)), world);
+			}
 		};
 
 		const flyers = new Map<number, Flyer>();
 		this.members.forEach((member, i) => {
-			const pilot = new RemotePilot();
+			const pilot = (member.bot ? new BotPilot(member.bot) : new RemotePilot());
 			const ship = this.createShip(member.id, pilot);
 			if (deathmatch) {
 				this.placeInArena(ship, loop);
@@ -417,7 +471,7 @@ export class Room {
 		const log = this.logs?.(this.code, run) ?? null;
 		log?.write({
 			k: "start", time: new Date().toISOString(), room: this.code, run, mode: this.mode, size: loop.size,
-			pilots: this.members.map(({ id, name, look }) => ({ id, name, bot: false, look })),
+			pilots: this.members.map(({ id, name, bot, look }) => ({ id, name, bot: Boolean(bot), look })),
 		});
 		const level = { run, index, difficulty: this.difficulty, loop, flyers, steps: 0, outcome: null, result: null, history: new ViewHistory(), log };
 
@@ -460,7 +514,7 @@ export class Room {
 		const ship = this.createShip(flyer.member.id, flyer.pilot);
 		loop.players[loop.players.indexOf(flyer.ship)] = ship;
 		this.placeInArena(ship, loop);
-		flyer.pilot.target = flyer.pilot.yaw = flyer.pilot.pitch = 0;
+		flyer.pilot.reset();
 		flyer.allowance.restart(ship);
 		this.log({ k: "spawn", t: this.time, by: flyer.member.id });
 		flyer.ship = ship;
@@ -469,7 +523,7 @@ export class Room {
 	}
 
 	/** The ship goes where the browser says, if it can have flown there */
-	private fly({ ship, pilot, allowance }: Flyer, state: ShipState): void {
+	private fly({ ship, allowance }: Flyer, pilot: RemotePilot, state: ShipState): void {
 		if (!allowance.fly(ship, state.p, state.q)) { this.refused.moves++; }
 		const limit = ship.topSpeed;
 		ship.engine.speed.value = clamp(state.speed, -limit, limit);
@@ -616,6 +670,8 @@ export class Room {
 		for (const entity of level.loop.scene) {
 			if (!(entity instanceof Shot) || entity instanceof Missile || this.announced.has(entity)) { continue; }
 			this.announced.add(entity);
+			const shooter = (entity.owner ? this.pilots.get(entity.owner) : undefined);
+			if (shooter !== undefined) { this.log({ k: "shot", t, by: shooter, p: rounded(entity.position), v: rounded(entity.velocity) }); }
 			const owner = (entity.owner ? this.id(entity.owner) : 0);
 			const event: GameEvent = [
 				"shot", t, ...rounded(entity.position), ...rounded(entity.velocity), entity.color, round(entity.timeLeft, 2), owner,

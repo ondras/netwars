@@ -204,6 +204,8 @@ function connect(socket: WebSocket, rooms: Rooms): void {
 				if (validSetup(message)) { room?.setup(client.id, message); }
 			break;
 
+			case "addBot": room?.addBot(client.id, rooms.newMemberId()); break;
+			case "removeBot": room?.removeBot(client.id, Number(message.id)); break;
 			case "start": room?.start(client.id, validLevel(message.level) ? message.level : undefined); break;
 			case "lobby": room?.toLobby(client.id); break;
 			case "state": room?.report(client.id, message); break;
@@ -225,7 +227,7 @@ const validSetup = ({ mode, level, difficulty, fragLimit, timeLimit }: RoomSetup
 	&& validLevel(level) && isDifficultyLevel(String(difficulty))
 	&& (FRAG_LIMITS as readonly number[]).includes(fragLimit) && (TIME_LIMITS as readonly number[]).includes(timeLimit));
 
-const MESSAGE_TYPES = new Set<ClientMessage["type"]>(["create", "join", "name", "look", "setup", "start", "lobby", "state", "leave", "resume"]);
+const MESSAGE_TYPES = new Set<ClientMessage["type"]>(["create", "join", "name", "look", "setup", "addBot", "removeBot", "start", "lobby", "state", "leave", "resume"]);
 
 /** A message's shape is checked further where its fields are used */
 function parse(data: RawData): ClientMessage | null {

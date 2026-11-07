@@ -35,6 +35,9 @@ export class OnlineMenu {
 	onLeave: (() => void) | null = null;
 	/** The button for picking your ship pressed */
 	onShip: (() => void) | null = null;
+	/** Host: add a bot to the room, or take one out */
+	onAddBot: (() => void) | null = null;
+	onRemoveBot: ((id: number) => void) | null = null;
 
 	private readonly panel = element<HTMLElement>("online");
 	private readonly backButton = element<HTMLButtonElement>("online-back");
@@ -90,6 +93,7 @@ export class OnlineMenu {
 		element<HTMLButtonElement>("lobby-start").onclick = () => this.onStart?.();
 		element<HTMLButtonElement>("lobby-leave").onclick = () => this.onLeave?.();
 		element<HTMLButtonElement>("lobby-ship").onclick = () => this.onShip?.();
+		element<HTMLButtonElement>("lobby-add-bot").onclick = () => this.onAddBot?.();
 		const copy = element<HTMLButtonElement>("lobby-copy");
 		copy.onclick = () => {
 			const link = element<HTMLInputElement>("lobby-link");
@@ -147,14 +151,22 @@ export class OnlineMenu {
 		element<HTMLInputElement>("lobby-link").value = inviteLink(room.code);
 		if (firstShow) { element<HTMLButtonElement>("lobby-copy").textContent = "Copy link"; }
 
-		element<HTMLElement>("lobby-players").replaceChildren(...room.players.map(({ id, name, away, look }) => {
+		element<HTMLElement>("lobby-players").replaceChildren(...room.players.map(({ id, name, away, look, bot }) => {
 			const item = document.createElement("li");
 			item.title = lookName(look);
-			const tags = [id == room.host ? "host" : "", id == me ? "you" : "", away ? "reconnecting…" : ""].filter(Boolean);
+			const tags = [id == room.host ? "host" : "", id == me ? "you" : "", away ? "reconnecting…" : "", bot ? "bot" : ""].filter(Boolean);
 			item.innerHTML = shipIcon(shipGeometries(look), PILOT_ICON_SIZE);
 			item.append(name + (tags.length ? ` (${tags.join(", ")})` : ""));
+			if (bot && host) {
+				const remove = document.createElement("button");
+				remove.type = "button";
+				remove.textContent = "Remove";
+				remove.onclick = () => this.onRemoveBot?.(id);
+				item.append(remove);
+			}
 			return item;
 		}));
+		element<HTMLButtonElement>("lobby-add-bot").hidden = !host || room.players.length >= MAX_PLAYERS;
 		const mine = room.players.find(({ id }) => id == me);
 		if (mine) { element<HTMLButtonElement>("lobby-ship").textContent = lookName(mine.look); }
 		element<HTMLElement>("lobby-count").textContent = `${room.players.length} of ${MAX_PLAYERS} pilots`;

@@ -465,6 +465,7 @@ export const PLAYER_SHIPS: readonly PlayerShipDesign[] = [
 const LOOKS = PLAYER_SHIPS.flatMap((design, ship) => design.skins.map((_, skinIndex) => ({ design, ship, skin: skinIndex })));
 
 export const DEFAULT_LOOK = 0;
+export const LOOK_COUNT = LOOKS.length;
 
 export const isLook = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 0 && (value as number) < LOOKS.length;
 
