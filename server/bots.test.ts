@@ -1,7 +1,12 @@
-import { vec3 } from "gl-matrix";
+import { quat, vec3 } from "gl-matrix";
 import { beforeAll, describe, expect, it } from "vitest";
-import { botTraits } from "../src/bot.ts";
+import { botTraits, noticeChance } from "../src/bot.ts";
+import { SENSE_FADE, SIGHT_REACH } from "../src/senses.ts";
+import { Missile } from "../src/entity/missile.ts";
 import type { PlayerShip } from "../src/entity/player-ship.ts";
+import { Powerup } from "../src/entity/powerup.ts";
+import { angleOffNose } from "../src/lock.ts";
+import type { Loop } from "../src/loop.ts";
 import { MAX_PLAYERS, type ServerMessage, type Snapshot } from "../src/net/protocol.ts";
 import { stubModels } from "../src/testing.ts";
 import { analyze, report } from "./analyze.ts";
@@ -28,8 +33,9 @@ function deathmatch(logs: ConstructorParameters<typeof Room>[4] = null): { room:
 	return { room, host };
 }
 
-type Reachable = { level: { flyers: Map<number, { ship: PlayerShip; allowance: Allowance }> } };
+type Reachable = { level: { flyers: Map<number, { ship: PlayerShip; allowance: Allowance }>; loop: Loop } };
 const shipOf = (room: Room, id: number) => (room as unknown as Reachable).level.flyers.get(id)!.ship;
+const loopOf = (room: Room) => (room as unknown as Reachable).level.loop;
 const run = (room: Room, seconds: number) => {
 	for (let t = 0; t < seconds; t += 0.05) { room.advance(0.05); }
 };
@@ -112,7 +118,7 @@ describe("bots in a room", () => {
 
 	it("can be hit by a person's shots, checked like any others, and give them the frag", () => {
 		const { room, host } = deathmatch();
-		room.addBot(host.id, 10, { ...botTraits(), cruise: 0, positioning: 0, fireRange: 0 }); /* stays put, holds its fire */
+		room.addBot(host.id, 10, { ...botTraits(), cruise: 0, positioning: 0, fireRange: 0, rocketDelay: Infinity }); /* stays put, holds its fire */
 		room.start(host.id);
 
 		const flyers = (room as unknown as Reachable).level.flyers;
@@ -210,6 +216,153 @@ describe("bots in a room", () => {
 	});
 });
 
+describe("how bots fly", () => {
+	/** A bot at the origin, facing -Z, and a person who sits still at the given place */
+	function pair(personAt: [number, number, number], traits = botTraits()): { room: Room; bot: PlayerShip; person: PlayerShip } {
+		const { room, host } = deathmatch();
+		room.addBot(host.id, 10, traits);
+		room.start(host.id);
+		const bot = shipOf(room, 10);
+		vec3.zero(bot.position);
+		quat.identity(bot.orientation);
+		const person = shipOf(room, host.id);
+		vec3.set(person.position, ...personAt);
+		return { room, bot, person };
+	}
+
+	function powerupAt(room: Room, kind: Powerup["kind"], x: number, y: number, z: number): Powerup {
+		const loop = loopOf(room);
+		const powerup = new Powerup(kind, loop.players);
+		vec3.set(powerup.position, x, y, z);
+		loop.spawn(powerup);
+		return powerup;
+	}
+
+	it("go and collect a powerup while nobody is near", () => {
+		const { room, bot } = pair([190, 190, 190]);
+		const powerup = powerupAt(room, "boost", 50, 20, -40);
+		run(room, 12);
+		expect(powerup.collector).toBe(bot);
+	});
+
+	it("leave a powerup alone to fight a ship that comes close", () => {
+		const { room, bot, person } = pair([0, 0, 70]);
+		const powerup = powerupAt(room, "boost", 60, 0, 0);
+		run(room, 1.5);
+		expect(angleOffNose(bot, person.position)).toBeLessThan(Math.PI / 4);
+		expect(powerup.dead).toBe(false);
+	});
+
+	it("know only what their radar shows, and go looking meanwhile, rather than stop", () => {
+		const { room, bot } = pair([-150, 0, -170]); /* 227 m away */
+		let fired = false;
+		for (let t = 0; t < 4; t += 0.05) {
+			room.advance(0.05);
+			fired ||= bot.trigger;
+		}
+		expect(fired).toBe(false);
+		expect(bot.engine.speed.value).toBeGreaterThan(5);
+	});
+
+	it("fight a ship once it is on their radar", () => {
+		const { room, bot } = pair([-60, 0, -80]); /* 100 m away */
+		let fired = false;
+		for (let t = 0; t < 6 && !fired; t += 0.05) {
+			room.advance(0.05);
+			fired ||= bot.trigger;
+		}
+		expect(fired).toBe(true);
+	});
+
+	it("hold their fire at a ship on their radar but out of sight, however far their guns would reach", () => {
+		const { room, bot } = pair([0, 0, -(SIGHT_REACH + 10)], { ...botTraits(), fireRange: 400 });
+		let fired = false;
+		for (let t = 0; t < 1.5; t += 0.05) {
+			room.advance(0.05);
+			fired ||= bot.trigger;
+		}
+		expect(fired).toBe(false);
+	});
+
+	it("stop firing the moment their target is out of sight, even in the middle of a burst", () => {
+		const { room, bot, person } = pair([0, 0, -100]);
+		for (let t = 0; t < 6 && !bot.trigger; t += 0.05) { room.advance(0.05); }
+		expect(bot.trigger).toBe(true);
+
+		const nose = vec3.transformQuat(vec3.create(), vec3.fromValues(0, 0, -1), bot.orientation);
+		vec3.scaleAndAdd(person.position, bot.position, nose, SIGHT_REACH + 10); /* still on the radar, now out of sight */
+		room.advance(0.05);
+		expect(bot.trigger).toBe(false);
+	});
+
+	it("notice a ship as a person would see it: in full view at once, fading out of sight seldom until well into the fade, out of sight never", () => {
+		expect(noticeChance(SIGHT_REACH - SENSE_FADE)).toBe(1);
+		expect(noticeChance(SIGHT_REACH - SENSE_FADE / 4)).toBeLessThan(0.05);
+		expect(noticeChance(SIGHT_REACH - SENSE_FADE / 2)).toBeLessThan(0.2);
+		expect(noticeChance(SIGHT_REACH - SENSE_FADE * 3 / 4)).toBeGreaterThan(0.3);
+		expect(noticeChance(SIGHT_REACH)).toBe(0);
+
+		/* halfway into the fade, it fires in the end, but not at once */
+		const firstShot = (distance: number) => {
+			const { room, bot } = pair([0, 0, -distance], { ...botTraits(), fireRange: 400, cruise: 0 });
+			let t = 0;
+			for (; t < 10 && !bot.trigger; t += 0.05) { room.advance(0.05); }
+			return t;
+		};
+		const fading = Array.from({ length: 12 }, () => firstShot(SIGHT_REACH - SENSE_FADE / 2));
+		const clear = Array.from({ length: 12 }, () => firstShot(SIGHT_REACH - SENSE_FADE - 10));
+		const mean = (values: number[]) => values.reduce((a, b) => a + b, 0) / values.length;
+		expect(mean(fading)).toBeGreaterThan(mean(clear) + 0.3);
+	});
+
+	it("lose a ship the moment it leaves their radar, not when they next look around", () => {
+		const { room, person } = pair([0, 0, -100]);
+		const pilot = (room as unknown as { level: { flyers: Map<number, { pilot: unknown }> } }).level.flyers.get(10)!.pilot as { target: unknown };
+		run(room, 0.5);
+		expect(pilot.target).toBe(person);
+		vec3.set(person.position, 150, 150, 0); /* 212 m away */
+		room.advance(0.05);
+		expect(pilot.target).toBeNull();
+	});
+
+	it("do not see powerups beyond their radar either", () => {
+		const { room, bot } = pair([190, 190, 190]);
+		const far = powerupAt(room, "boost", 0, 0, 230); /* behind, beyond the radar */
+		run(room, 3);
+		expect(angleOffNose(bot, far.position)).toBeGreaterThan(Math.PI / 4);
+	});
+
+	it("do not bother with what would do them no good", () => {
+		const { room, bot } = pair([190, 190, 190]);
+		const shields = powerupAt(room, "shields", 0, 0, -40);
+		const rockets = powerupAt(room, "rockets", 0, 40, 0);
+		const boost = powerupAt(room, "boost", 150, 0, 0);
+		run(room, 3);
+		expect(angleOffNose(bot, boost.position)).toBeLessThan(angleOffNose(bot, shields.position));
+		expect(angleOffNose(bot, boost.position)).toBeLessThan(angleOffNose(bot, rockets.position));
+	});
+
+	it("launch rockets once they have a lock, also at a ship through the wall", () => {
+		const { room, bot } = pair([0, 0, 340], { ...botTraits(), fireRange: 0 }); /* the world repeats every 400 m: its nearest copy is 60 m ahead; no gun, or it may win before a lock */
+		for (let t = 0; t < 8 && bot.rockets == 3; t += 0.05) { room.advance(0.05); }
+		expect(bot.rockets).toBeLessThan(3);
+		const rocket = loopOf(room).scene.find(entity => entity instanceof Missile && entity.owner == bot);
+		expect(rocket).toBeDefined();
+	});
+
+	it("keep the trigger down for a while once they pull it", () => {
+		const { room, bot } = pair([0, 0, -50]);
+		const held: boolean[] = [];
+		for (let t = 0; t < 6; t += 0.05) {
+			room.advance(0.05);
+			held.push(bot.trigger);
+		}
+		const pulls = held.filter((down, i) => down && !held[i - 1]).length;
+		expect(pulls).toBeGreaterThan(0);
+		expect(held.filter(Boolean).length / pulls).toBeGreaterThan(5); /* at least a quarter of a second each */
+	});
+});
+
 describe("the arena", () => {
 	it("runs a whole match of bots: they find each other and score", () => {
 		const { frags, outcome } = fight([botTraits(), botTraits()], { fragLimit: 3, timeLimit: 5, arenaSize: 400 });
@@ -221,6 +374,11 @@ describe("the arena", () => {
 		const { frags } = tournament([botTraits(1, 0.5), botTraits(0, 0.5)], 6, { fragLimit: 10, timeLimit: 3, arenaSize: 400 });
 		expect(frags[0]).toBeGreaterThan(frags[1]);
 	});
+
+	it("gives better flying more frags, all else being equal", () => {
+		const { frags } = tournament([botTraits(0.5, 1), botTraits(0.5, 0)], 30, { fragLimit: 10, timeLimit: 3, arenaSize: 400 }); /* about 55 % of frags: it takes this many */
+		expect(frags[0]).toBeGreaterThan(frags[1]);
+	});
 });
 
 describe("recordings", () => {
@@ -228,26 +386,34 @@ describe("recordings", () => {
 		const entries: LogEntry[] = [];
 		let closed = 0;
 		fight([botTraits(0.8, 0.8), botTraits(0.3, 0.3)], {
-			fragLimit: 5,
-			timeLimit: 3,
+			fragLimit: 30, /* a whole 5 minutes: enough meetings for every kind of entry, with bots that only fight what their radar shows */
+			timeLimit: 5,
 			logs: () => ({ write: entry => { entries.push(entry); }, close: () => { closed++; } }),
 		});
 
 		expect(closed).toBe(1);
 		const kinds = new Set(entries.map(({ k }) => k));
-		for (const kind of ["start", "f", "shot", "hit", "kill", "end"] as const) { expect(kinds, kind).toContain(kind); }
+		for (const kind of ["start", "f", "shot", "hit", "kill", "rocket", "end"] as const) { expect(kinds, kind).toContain(kind); }
 		expect(entries[0].k).toBe("start");
 		expect(entries.at(-1)!.k).toBe("end");
 
 		const [good, poor] = analyze(entries);
 		for (const stats of [good, poor]) {
 			expect(stats.flying).toBeGreaterThan(5);
-			expect(stats.shots).toBeGreaterThan(0);
-			expect(stats.hitRate).toBeGreaterThan(0);
+			expect(stats.hitRate).toBeGreaterThanOrEqual(0);
 			expect(stats.hitRate).toBeLessThanOrEqual(1);
+			expect(stats.hitRateClose).toBeLessThanOrEqual(1);
+			expect(stats.hitRateMiddle).toBeLessThanOrEqual(1);
 			expect(stats.speed).toBeGreaterThan(5);
 			expect(stats.speed).toBeLessThanOrEqual(23);
+			expect(stats.timeClose + stats.timeFar).toBeLessThanOrEqual(1);
+			expect(stats.fightsPerMinute).toBeGreaterThan(0);
+			expect(stats.burstLength).toBeGreaterThan(1);
+			expect(stats.stickMoving).toBeGreaterThan(0);
 		}
+		expect(good.rockets + poor.rockets).toBeGreaterThan(0);
+		expect(good.shots + poor.shots).toBeGreaterThan(0);
+		expect(good.hitRate + poor.hitRate).toBeGreaterThan(0); /* a short match can leave the weaker bot without a hit */
 		expect(report([good, poor])).toContain("hit rate");
 	});
 });

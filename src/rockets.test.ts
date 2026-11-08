@@ -1,4 +1,4 @@
-import { quat, vec3 } from "gl-matrix";
+import { quat, vec3, type ReadonlyVec3 } from "gl-matrix";
 import { beforeAll, describe, expect, it } from "vitest";
 import { Color } from "./color.ts";
 import { Entity } from "./entity/entity.ts";
@@ -8,6 +8,7 @@ import { ROCKET, ROCKET_CAPACITY, Ship } from "./entity/ship.ts";
 import { Shot } from "./entity/shot.ts";
 import { triangle } from "./geometry.ts";
 import { HOLD_CONE, LOCK_RANGE, LOCK_TIME, TargetLock } from "./lock.ts";
+import { nearestCopy } from "./world.ts";
 import { Loop } from "./loop.ts";
 import { stubModels } from "./testing.ts";
 
@@ -55,6 +56,18 @@ describe("target lock", () => {
 		expect(lock.locked).toBe(false);
 
 		lock.update(LOCK_TIME / 2, observer, [enemy]);
+		expect(lock.locked).toBe(true);
+	});
+
+	it("finds an enemy through the wall of a world that wraps around", () => {
+		const lock = new TargetLock(entity => entity instanceof Enemy);
+		const enemy = enemyAt(0, 0, 340);
+		const nearest = (point: ReadonlyVec3, around: ReadonlyVec3) => nearestCopy(point, around, 400);
+
+		lock.update(LOCK_TIME, shipAt(0, 0, 0), [enemy]);
+		expect(lock.target).toBeNull();
+
+		lock.update(LOCK_TIME, shipAt(0, 0, 0), [enemy], nearest);
 		expect(lock.locked).toBe(true);
 	});
 

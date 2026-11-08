@@ -702,9 +702,13 @@ export class Room {
 
 		/* enemy shots fly in a straight line: one event each is enough to show them */
 		for (const entity of level.loop.scene) {
-			if (!(entity instanceof Shot) || entity instanceof Missile || this.announced.has(entity)) { continue; }
+			if (!(entity instanceof Shot) || this.announced.has(entity)) { continue; }
 			this.announced.add(entity);
 			const shooter = (entity.owner ? this.pilots.get(entity.owner) : undefined);
+			if (entity instanceof Missile) { /* a person's rocket was logged when reported; a missile is shown as an entity anyway */
+				if (shooter !== undefined && this.flownHere.has(entity.owner!)) { this.log({ k: "rocket", t, by: shooter }); }
+				continue;
+			}
 			if (shooter !== undefined) { this.log({ k: "shot", t, by: shooter, p: rounded(entity.position), v: rounded(entity.velocity) }); }
 			const owner = (entity.owner ? this.id(entity.owner) : 0);
 			const event: GameEvent = [

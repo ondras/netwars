@@ -178,7 +178,7 @@ export class Ship extends Entity {
 		this.pilot?.update(dt, this, world);
 
 		if (this.targetLock) {
-			if (this.rockets > 0) { this.targetLock.update(dt, this, world.scene); } else { this.targetLock.clear(); }
+			if (this.rockets > 0) { this.targetLock.update(dt, this, world.scene, (point, around) => world.nearest(point, around)); } else { this.targetLock.clear(); }
 		}
 		if (this.launch) {
 			this.launch = false;
