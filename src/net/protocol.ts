@@ -136,6 +136,8 @@ export type ClientMessage =
 	/** About STATE_RATE times a second while flying; without a ship, a destroyed ship's shots still landing */
 	| { type: "state"; ship?: ShipState; shots: ShotReport[]; rockets: RocketReport[]; hits: HitReport[] }
 	| { type: "leave" }
+	/** This player's pause menu opened or closed; while every person in the level has it open, the level stands still */
+	| { type: "pause"; paused: boolean }
 	/** On a new connection, after the old one dropped or the page was reloaded: take my place in my room back */
 	| { type: "resume"; token: string };
 

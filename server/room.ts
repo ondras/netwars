@@ -172,6 +172,8 @@ export class Room {
 	private readonly announced = new WeakSet<Entity>();
 	/** Ships flown here rather than by a browser */
 	private readonly flownHere = new WeakSet<Entity>();
+	/** People whose pause menu is open */
+	private readonly pausedMembers = new Set<number>();
 	private readonly logs: MatchLogs | null;
 
 	constructor(code: string, host: Member, levelIndex: number, difficulty: DifficultyLevel, logs: MatchLogs | null = null) {
@@ -224,6 +226,7 @@ export class Room {
 		if (index < 0) { return this.members.length == 0; }
 		this.members.splice(index, 1);
 		this.away.delete(memberId);
+		this.pausedMembers.delete(memberId);
 
 		const flyer = this.level?.flyers.get(memberId);
 		if (flyer) {
@@ -248,6 +251,7 @@ export class Room {
 	disconnected(memberId: number): void {
 		if (!this.members.some(({ id }) => id == memberId)) { return; }
 		this.away.set(memberId, 0);
+		this.pausedMembers.delete(memberId);
 		const flyer = this.level?.flyers.get(memberId);
 		if (flyer) {
 			if (flyer.pilot instanceof RemotePilot) { flyer.pilot.yaw = flyer.pilot.pitch = 0; }
@@ -262,6 +266,7 @@ export class Room {
 		const member = this.members.find(({ id }) => id == memberId);
 		if (!member) { return; }
 		this.away.delete(memberId);
+		this.pausedMembers.delete(memberId);
 		this.pickHost();
 		this.welcome(member);
 
@@ -336,6 +341,7 @@ export class Room {
 		this.levelIndex = levelIndex;
 		const level = this.level = this.createLevel(levelIndex);
 		this.state = "playing";
+		this.pausedMembers.clear();
 		for (const flyer of level.flyers.values()) { flyer.member.send(this.startMessage(level, flyer)); }
 	}
 
@@ -367,8 +373,10 @@ export class Room {
 	 * @returns Whether the room is empty now
 	 */
 	advance(elapsed: number): boolean {
-		for (const { allowance, ship } of this.level?.flyers.values() ?? []) { allowance.refill(elapsed, ship); }
-		this.level?.loop.advance(elapsed);
+		if (!this.frozen) {
+			for (const { allowance, ship } of this.level?.flyers.values() ?? []) { allowance.refill(elapsed, ship); }
+			this.level?.loop.advance(elapsed);
+		}
 		for (const [id, time] of this.away) {
 			if (time + elapsed < RECONNECT_GRACE) {
 				this.away.set(id, time + elapsed);
@@ -377,6 +385,22 @@ export class Room {
 			}
 		}
 		return false;
+	}
+
+	/** A person's pause menu opened or closed */
+	setPaused(memberId: number, paused: boolean): void {
+		if (this.state != "playing" || !this.members.some(({ id, bot }) => id == memberId && !bot)) { return; }
+		if (paused) {
+			this.pausedMembers.add(memberId);
+		} else {
+			this.pausedMembers.delete(memberId);
+		}
+	}
+
+	/** Every person here has their pause menu open: nobody but bots would play on, so the level stands still, its clock too */
+	private get frozen(): boolean {
+		const present = this.members.filter(({ id, bot }) => !bot && !this.away.has(id));
+		return present.length > 0 && present.every(({ id }) => this.pausedMembers.has(id));
 	}
 
 	/** Simulation time of the level (s) */

@@ -173,6 +173,11 @@ export class OnlineSession {
 		}
 	}
 
+	/** The level stood still on the server while this player paused alone: its clock did too, so it is taken afresh from the next snapshot */
+	resync(): void {
+		this.offset = null;
+	}
+
 	/** Teammates still flying */
 	get teammates(): Ship[] {
 		return this.players.filter(ship => ship != this.ship && !ship.dead);

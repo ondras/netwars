@@ -30,7 +30,10 @@ function backToLevels(level: number): void {
 }
 
 function pause(): void {
-	game.pause();
+	/* online with nobody else but bots, the level stands still for you, as it does alone */
+	const alone = (room?.players.every(({ id, bot }) => id == me || bot) ?? false);
+	game.pause(alone);
+	if (game.online) { send({ type: "pause", paused: true }); }
 	document.body.classList.remove("playing"); /* show the cursor for the buttons */
 	menu.showPause();
 }
@@ -38,6 +41,7 @@ function pause(): void {
 function resume(): void {
 	menu.hidePause();
 	document.body.classList.add("playing");
+	if (game.online) { send({ type: "pause", paused: false }); }
 	game.resume();
 }
 

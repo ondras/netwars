@@ -138,6 +138,49 @@ describe("bots in a room", () => {
 		expect(last().match!.frags[host.id]).toBe(1);
 	});
 
+	it("stand still, with the level and its clock, while every person in it has paused", () => {
+		const { room, host } = deathmatch();
+		room.addBot(host.id, 10, botTraits(1, 1));
+		room.start(host.id);
+		const person = shipOf(room, host.id);
+		vec3.set(person.position, 0, 0, -60);
+		vec3.zero(shipOf(room, 10).position);
+		const clock = () => snapshots(host).at(-1)!.match!.left;
+		run(room, 0.2);
+
+		room.setPaused(host.id, true);
+		const before = { left: clock(), shields: person.shields.value, snapshots: snapshots(host).length, at: vec3.clone(shipOf(room, 10).position) };
+		run(room, 10);
+		expect(snapshots(host)).toHaveLength(before.snapshots);
+		expect(person.shields.value).toBe(before.shields);
+		expect(vec3.distance(shipOf(room, 10).position, before.at)).toBe(0);
+
+		room.setPaused(host.id, false);
+		run(room, 1);
+		expect(clock()).toBeLessThan(before.left);
+		expect(clock()).toBeGreaterThan(before.left - 2);
+	});
+
+	it("play on when someone else is still playing, or when the one who paused is gone", () => {
+		const { room, host } = deathmatch();
+		const guest = member(2);
+		room.join(guest);
+		room.addBot(host.id, 10);
+		room.start(host.id);
+		run(room, 0.2);
+
+		room.setPaused(host.id, true);
+		const before = snapshots(host).length;
+		run(room, 1);
+		expect(snapshots(host).length).toBeGreaterThan(before); /* the guest plays on */
+
+		room.leave(guest.id);
+		room.disconnected(host.id); /* paused, then gone: nobody is there to keep it still for */
+		const then = snapshots(host).length;
+		run(room, 1);
+		expect(snapshots(host).length).toBeGreaterThan(then);
+	});
+
 	it("come back after being destroyed, flying a new ship", () => {
 		const { room, host } = deathmatch();
 		room.addBot(host.id, 10);

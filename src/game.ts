@@ -83,6 +83,8 @@ export class Game {
 	private session: Session | null = null;
 	/** An online level's pause menu is open */
 	private held = false;
+	/** An online level stands still while its pause menu is open: nobody else but bots plays in it */
+	private frozen = false;
 	/** Followed by the camera once your ship is gone in an online level */
 	private watching: Ship | null = null;
 	/** This player's id, online */
@@ -125,21 +127,24 @@ export class Game {
 		return this.loop.paused || this.held;
 	}
 
-	pause(): void {
+	/** @param alone Online, nobody else but bots plays: the server stops the level too, so it stands still here as well */
+	pause(alone = false): void {
 		if (!this.playing) { return; }
-		if (this.session!.online) {
+		if (this.session!.online && !alone) {
 			this.held = true;
 			this.session!.ship.setPilot(HOLD);
 		} else {
 			this.loop.paused = true;
+			this.frozen = this.session!.online !== null;
 		}
 	}
 
 	resume(): void {
 		this.pilot.reset(); /* drop clicks and key presses made while paused */
+		if (this.frozen) { this.session?.online?.resync(); }
 		this.loop.paused = false;
 		if (this.held && this.playing) { this.session!.ship.setPilot(this.pilot); }
-		this.held = false;
+		this.held = this.frozen = false;
 	}
 
 	/** 0..1 */
