@@ -51,6 +51,13 @@ export interface BotTraits {
 	readonly evasion: number;
 	/** How well it uses its speed, 0..1: holds a steady range behind a target, slows down to turn tighter */
 	readonly positioning: number;
+
+	/* Awareness */
+	/**
+	 * Co-op: how long after a new enemy or powerup shows on its radar it does anything about it (s).
+	 * A person takes a while to notice a new dot, make up their mind and turn; 0 is at once.
+	 */
+	readonly attention: number;
 }
 
 const mix = (from: number, to: number, share: number) => from + (to - from) * share;
@@ -78,8 +85,20 @@ export function botTraits(aim = 0.5, flying = 0.5): BotTraits {
 		engageRange: scale(100, 170, 200, flying),
 		evasion: scale(0, 0, 0.8, flying),
 		positioning: scale(0, 0, 1, flying),
+
+		attention: 0,
 	};
 }
+
+/**
+ * Co-op pilots, tuned on 2026-11-08 against the user flying levels 4-6 alongside the ace. The ace acts on whatever shows on its radar at once.
+ * The person, like the user, takes 1.5 s to take in a new contact and launches a rocket 4 s after a lock, if ever:
+ * with the ace it destroyed 25 % of the enemies, fired 38 shots a minute and hit with 11 %, against the user's 26 %, 37 and 12 %.
+ */
+export const COOP_PILOTS = {
+	ace: botTraits(),
+	person: { ...botTraits(), attention: 1.5, rocketDelay: 4 },
+} as const satisfies Record<string, BotTraits>;
 
 /** How long it flies on after veering off (s) */
 const BREAK_TIME = 0.8;
@@ -214,6 +233,8 @@ export class BotPilot implements Pilot {
 	/** It has seen the ship it is after, and keeps its eyes on it while it is within sight */
 	private noticed = false;
 	private sinceGlance = 0;
+	/** Co-op: when each enemy and powerup first showed on its radar, by its own clock */
+	private readonly shownAt = new Map<Entity, number>();
 	/** Phases of its aim's wandering */
 	private readonly phases: readonly number[];
 
@@ -232,6 +253,7 @@ export class BotPilot implements Pilot {
 		this.seen.length = 0;
 		this.breakLeft = this.evadeRest = this.throttleSteps = this.burstLeft = this.burstRest = this.lockedFor = this.rocketRest = this.headLeft = 0;
 		this.pursuing = this.noticed = false;
+		this.shownAt.clear();
 	}
 
 	update(dt: number, ship: Ship, world: World): void {
@@ -391,6 +413,7 @@ export class BotPilot implements Pilot {
 	/** Who to fight and what to collect, looked at again from time to time, not all the time; and what the one it fights is doing */
 	private look(dt: number, ship: Ship, world: World): void {
 		this.sinceLook += dt;
+		if (this.coop && this.traits.attention > 0) { this.takeIn(world); }
 		const stale = (!this.target || this.target.dead || this.sinceLook >= RETARGET_TIME);
 		if (stale) {
 			this.sinceLook = 0;
@@ -405,7 +428,8 @@ export class BotPilot implements Pilot {
 				this.noticed = false;
 			}
 			this.target = nearest;
-			const powerups = world.scene.filter((entity): entity is Powerup => entity instanceof Powerup && !entity.dead && wants(entity, ship) && onRadar(entity));
+			const powerups = world.scene.filter((entity): entity is Powerup => entity instanceof Powerup && !entity.dead && wants(entity, ship) && onRadar(entity)
+				&& this.aware(entity));
 			this.powerup = this.nearest(ship, world, powerups);
 		} else if (this.powerup?.dead) {
 			this.powerup = null;
@@ -422,6 +446,24 @@ export class BotPilot implements Pilot {
 		}
 		seen.push({ time: this.time, position: vec3.clone(target.position), velocity: vec3.clone(target.velocity) });
 		while (seen.length > 1 && seen[1].time <= this.time - this.traits.reaction) { seen.shift(); }
+	}
+
+	/** Co-op: notes when new enemies and powerups show on its radar, and forgets those that are gone */
+	private takeIn(world: World): void {
+		for (const entity of world.scene) {
+			if ((entity instanceof Powerup || (entity instanceof Ship && !(entity instanceof PlayerShip))) && !entity.dead && !this.shownAt.has(entity)) {
+				this.shownAt.set(entity, this.time);
+			}
+		}
+		for (const entity of this.shownAt.keys()) {
+			if (entity.dead) { this.shownAt.delete(entity); }
+		}
+	}
+
+	/** Co-op: whether it has taken in a contact yet, `attention` after it showed */
+	private aware(entity: Entity): boolean {
+		const since = this.shownAt.get(entity);
+		return (since === undefined || this.time - since >= this.traits.attention);
 	}
 
 	/** The ship it was after got off its radar: it heads on for where that was going, as far as it saw */
@@ -454,7 +496,7 @@ export class BotPilot implements Pilot {
 		let best: Ship | null = null;
 		let bestScore = Infinity;
 		for (const entity of world.scene) {
-			if (!(entity instanceof Ship) || entity instanceof PlayerShip || entity.dead) { continue; }
+			if (!(entity instanceof Ship) || entity instanceof PlayerShip || entity.dead || !this.aware(entity)) { continue; }
 			const distance = vec3.distance(ship.position, entity.position);
 			const theirs = teammates.some(other => vec3.distance(other.position, entity.position) < distance);
 			const weight = (entity instanceof Pirate ? (entity.cargo ? CARRIER_WEIGHT : THIEF_WEIGHT) : 1) * (theirs ? TEAMMATE_WEIGHT : 1);

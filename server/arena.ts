@@ -2,12 +2,12 @@
  * Bots fight real matches on the real rules, with nothing drawn and as fast as the computer can:
  * `pnpm arena [matches] [aim,flying ...]`, each pair of skills 0..1 being a bot. Example: `pnpm arena 20 0.8,0.2 0.2,0.8`
  * Or they defend the pods together in every co-op level at every difficulty:
- * `pnpm arena coop [runs] [aim,flying ...]`. Example: `pnpm arena coop 10 0.5,0.5 0.5,0.5`
+ * `pnpm arena coop [runs] [aim,flying | ace | person ...]`. Example: `pnpm arena coop 10 person ace`
  */
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { botTraits, type BotTraits } from "../src/bot.ts";
+import { botTraits, COOP_PILOTS, type BotTraits } from "../src/bot.ts";
 import { DIFFICULTIES, type DifficultyLevel } from "../src/difficulty.ts";
 import { LEVELS } from "../src/levels.ts";
 import { DEFAULT_FRAG_LIMIT, DEFAULT_TIME_LIMIT, type OutcomeMessage, type ServerMessage } from "../src/net/protocol.ts";
@@ -110,17 +110,20 @@ async function coopReport(bots: readonly BotTraits[], runs: number): Promise<str
 if (import.meta.url == pathToFileURL(process.argv[1] ?? "").href) {
 	const coop = process.argv[2] == "coop";
 	const [count = "10", ...specs] = process.argv.slice(coop ? 3 : 2);
-	const skills = (specs.length ? specs : (coop ? ["0.5,0.5"] : ["0.5,0.5", "0.5,0.5"])).map(spec => spec.split(",").map(Number));
+	const named = (spec: string): spec is keyof typeof COOP_PILOTS => Object.hasOwn(COOP_PILOTS, spec);
 	const modelsDir = fileURLToPath(new URL("../public/models", import.meta.url));
 	setModelSource(name => readFile(join(modelsDir, `${name}.nsh`), "latin1"));
 
 	const started = performance.now();
 	if (coop) {
-		console.log(`${skills.length} bot(s) (aim, flying: ${skills.map(skill => skill.join(", ")).join("; ")}), ${count} runs of each level\n`);
-		console.log(await coopReport(skills.map(([aim, flying]) => botTraits(aim, flying)), Number(count)));
+		const pilots = (specs.length ? specs : ["ace"]);
+		const traits = pilots.map(spec => (named(spec) ? COOP_PILOTS[spec] : botTraits(...spec.split(",").map(Number) as [number, number])));
+		console.log(`${pilots.length} bot(s): ${pilots.join("; ")}; ${count} runs of each level\n`);
+		console.log(await coopReport(traits, Number(count)));
 		console.log(`\nin ${((performance.now() - started) / 1000).toFixed(1)} s`);
 		process.exit(0);
 	}
+	const skills = (specs.length ? specs : ["0.5,0.5", "0.5,0.5"]).map(spec => spec.split(",").map(Number));
 	const { frags, wins, stats } = tournament(skills.map(([aim, flying]) => botTraits(aim, flying)), Number(count));
 	skills.forEach(([aim, flying], i) => console.log(`Bot ${i + 1} (aim ${aim}, flying ${flying}): ${frags[i]} frags, ${wins[i]} wins`));
 	console.log(`\nLast match:\n${report(stats.at(-1)!)}`);
