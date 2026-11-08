@@ -6,6 +6,7 @@ import { Pirate } from "../entity/pirate.ts";
 import { PlayerShip } from "../entity/player-ship.ts";
 import { lookOf, shipGeometries } from "../entity/player-ships.ts";
 import { Pod } from "../entity/pod.ts";
+import { Powerup } from "../entity/powerup.ts";
 import { ROCKET, ROCKET_CAPACITY } from "../entity/ship.ts";
 import { Shot } from "../entity/shot.ts";
 import { Loop } from "../loop.ts";
@@ -121,6 +122,24 @@ describe("online session", () => {
 		expect(hits[0].t).toBeGreaterThan(shots[0].t); /* both on the same clock: the server's, as shown here */
 		expect(pirate.shields.value).toBe(25);
 		expect(sounds).toContain("hit");
+	});
+
+	it("reports a shot that hits a powerup; it blows up when the server says so", async () => {
+		const { loop, ship, receive, run, reports } = setup();
+		receive(0, [record(7, "powerup-shields", [0, -0.3, -30])]);
+		await settle();
+		run(0.2);
+		const powerup = loop.scene.find(entity => entity instanceof Powerup)!;
+
+		ship.trigger = true;
+		run(0.05);
+		ship.trigger = false;
+		run(0.4);
+
+		expect(reports().flatMap(report => report.hits).map(({ id }) => id)).toEqual([7]);
+		expect(powerup.dead).toBe(false);
+		receive(0.65, [], [["explode", 0.64, 7]]);
+		expect(powerup.exploded).toBe(true);
 	});
 
 	it("shows other ships' shots without letting them hurt: the server decides", async () => {
@@ -245,9 +264,9 @@ describe("online session", () => {
 
 	it("takes shields from the server and powerups the server says this ship collected", () => {
 		const { ship, receive } = setup();
-		receive(0, [], [["powerup", 0, "rapid"]], 60);
+		receive(0, [], [["powerup", 0, "power"]], 60);
 		expect(ship.shields.value).toBe(60);
-		expect(ship.effects.rapid).toBeGreaterThan(0);
+		expect(ship.effects.power).toBeGreaterThan(0);
 		expect(vec3.length(ship.position)).toBe(0);
 	});
 });

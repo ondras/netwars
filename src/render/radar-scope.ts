@@ -5,7 +5,7 @@ import { Hunter } from "../entity/hunter.ts";
 import { PlayerShip } from "../entity/player-ship.ts";
 import { Raider } from "../entity/raider.ts";
 import { Pod } from "../entity/pod.ts";
-import { Powerup } from "../entity/powerup.ts";
+import { Powerup, POWERUPS } from "../entity/powerup.ts";
 import { Ship } from "../entity/ship.ts";
 import { radarContact, type RadarContact } from "../radar.ts";
 
@@ -24,6 +24,11 @@ export const TEAM_COLOR = "rgb(110, 255, 140)";
 const CELLS = 4;
 /** Longest height stalk, in radar units (1 = range) */
 const MAX_STALK = 0.5;
+const LETTER_FONT = "bold 10px ui-monospace, monospace";
+/** Width of the dark rim round a powerup's letter, so that grid lines do not cut through it (px) */
+const LETTER_RIM = 3;
+/** From a powerup's dot to its letter, beside it (px) */
+const LETTER_GAP = 4;
 
 /** @returns null for entities not shown on the radar */
 function contactColor(entity: Entity): string | null {
@@ -71,9 +76,14 @@ const BOUNDS = (() => {
 interface Plotted {
 	contact: RadarContact;
 	color: string;
+	/** What kind of powerup it is */
+	letter: string | null;
 }
 
-/** Square grid in perspective; contacts stand on stalks showing their height */
+/**
+ * Square grid in perspective. Contacts stand on stalks showing their height, or hang below the grid; a powerup has its letter
+ * beside its dot. Those beyond its range are hollow dots at its edge, in the direction they are; their height shows just the same.
+ */
 export class RadarScope {
 	/** Half the side of the covered square (m) */
 	readonly range: number;
@@ -124,31 +134,49 @@ export class RadarScope {
 		for (const entity of entities) {
 			if (entity == observer || entity.dead) { continue; }
 			const color = contactColor(entity);
-			if (color) { plotted.push({ contact: radarContact(observer, entity, this.range), color }); }
+			if (!color) { continue; }
+
+			const letter = (entity instanceof Powerup ? POWERUPS[entity.kind].letter : null);
+			plotted.push({ contact: radarContact(observer, entity, this.range), color, letter });
 		}
 		plotted.sort((a, b) => b.contact.forward - a.contact.forward);
 
-		for (const { contact, color } of plotted) {
+		ctx.font = LETTER_FONT;
+		ctx.textAlign = "left";
+		ctx.textBaseline = "middle";
+
+		for (const { contact, color, letter } of plotted) {
 			const x = contact.x;
 			const z = -contact.forward;
+			const y = Math.max(-MAX_STALK, Math.min(MAX_STALK, contact.height));
 			ctx.strokeStyle = ctx.fillStyle = color;
 
-			if (contact.outOfRange) {
-				ctx.beginPath();
-				ctx.arc(...toScreen(x, 0, z), 3, 0, 2 * Math.PI);
-				ctx.stroke();
-				continue;
-			}
-
-			const y = Math.max(-MAX_STALK, Math.min(MAX_STALK, contact.height));
 			ctx.beginPath();
 			moveTo(x, 0, z);
 			lineTo(x, y, z);
 			ctx.stroke();
 
+			const [dotX, dotY] = toScreen(x, y, z);
 			ctx.beginPath();
-			ctx.arc(...toScreen(x, y, z), 2.5, 0, 2 * Math.PI);
-			ctx.fill();
+			if (contact.outOfRange) {
+				ctx.arc(dotX, dotY, 3, 0, 2 * Math.PI);
+				ctx.fillStyle = "#000"; /* hollow: the stalk does not show inside */
+				ctx.fill();
+				ctx.stroke();
+				ctx.fillStyle = color;
+			} else {
+				ctx.arc(dotX, dotY, 2.5, 0, 2 * Math.PI);
+				ctx.fill();
+			}
+
+			if (letter) {
+				/* beside the dot, level with it: it stays put whether the powerup is above or below */
+				ctx.lineWidth = LETTER_RIM;
+				ctx.strokeStyle = "#000";
+				ctx.strokeText(letter, dotX + LETTER_GAP, dotY);
+				ctx.lineWidth = 1;
+				ctx.fillText(letter, dotX + LETTER_GAP, dotY);
+			}
 		}
 
 		ctx.restore();

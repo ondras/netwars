@@ -10,7 +10,7 @@ import { PlayerShip } from "../src/entity/player-ship.ts";
 import { LOOK_COUNT } from "../src/entity/player-ships.ts";
 import { Pod } from "../src/entity/pod.ts";
 import { Powerup } from "../src/entity/powerup.ts";
-import { ROCKET, ROCKET_CAPACITY, Ship } from "../src/entity/ship.ts";
+import { POWER_SHOT, ROCKET, ROCKET_CAPACITY, Ship } from "../src/entity/ship.ts";
 import { Shot } from "../src/entity/shot.ts";
 import { EnemySpawner, PowerupSpawner } from "../src/entity/spawner.ts";
 import { ENEMY_KINDS, LEVELS, levelOutcome, POD_FIELD, type EnemyKind, type Outcome } from "../src/levels.ts";
@@ -525,9 +525,9 @@ export class Room {
 	/** The ship goes where the browser says, if it can have flown there */
 	private fly({ ship, allowance }: Flyer, pilot: RemotePilot, state: ShipState): void {
 		if (!allowance.fly(ship, state.p, state.q)) { this.refused.moves++; }
-		const limit = ship.topSpeed;
+		const { limit } = ship.engine.speed;
 		ship.engine.speed.value = clamp(state.speed, -limit, limit);
-		vec3.transformQuat(ship.velocity, vec3.fromValues(0, 0, -ship.engine.speed.value), ship.orientation);
+		vec3.transformQuat(ship.velocity, vec3.fromValues(0, 0, -ship.engine.speed.value * ship.thrust), ship.orientation);
 		pilot.target = clamp(state.target, -limit, limit);
 		pilot.yaw = clamp(state.yaw, -1, 1);
 		pilot.pitch = clamp(state.pitch, -1, 1);
@@ -545,9 +545,11 @@ export class Room {
 		const now = this.time;
 		const oldest = shots.keys().next().value;
 		if (oldest !== undefined && now - shots.get(oldest)!.t > 2 * PLAYER_GUN.lifetime) { shots.delete(oldest); }
-		shots.set(shot.n, { t: clamp(shot.t, now - REWIND_LIMIT, now), p: shot.p, v: shot.v });
+		const { damage, color } = (ship.effects.power > 0 ? POWER_SHOT : PLAYER_GUN);
+		ship.effects.power = Math.max(0, ship.effects.power - 1);
+		shots.set(shot.n, { t: clamp(shot.t, now - REWIND_LIMIT, now), p: shot.p, v: shot.v, damage });
 
-		const event: GameEvent = ["shot", now, ...rounded(shot.p as vec3), ...rounded(shot.v as vec3), PLAYER_GUN.color, PLAYER_GUN.lifetime, this.id(ship), 0];
+		const event: GameEvent = ["shot", now, ...rounded(shot.p as vec3), ...rounded(shot.v as vec3), color, PLAYER_GUN.lifetime, this.id(ship), 0];
 		this.queue.push({ event, except: flyer.member.id });
 		this.log({ k: "shot", t: now, by: flyer.member.id, p: shot.p, v: shot.v });
 	}
@@ -596,7 +598,7 @@ export class Room {
 
 		if (target instanceof Ship) {
 			target.lastHitBy = flyer.ship;
-			if (target.absorb(PLAYER_GUN.damage)) {
+			if (target.absorb(shot.damage)) {
 				/* the shooter heard it already */
 				this.queue.push({ event: ["sound", this.time, "hit", ...rounded(target.position, 1)], except: flyer.member.id });
 				return;
@@ -773,7 +775,7 @@ export class Room {
 			const q = ship.orientation;
 			s.push([
 				id, ...rounded(ship.position), round(q[0], 4), round(q[1], 4), round(q[2], 4), round(q[3], 4),
-				Math.round(ship.shields.value), round(speed.value, 2), round(speed.target, 2), round(yaw.control, 3), round(pitch.control, 3),
+				Math.round(ship.shields.value), round(speed.value * ship.thrust, 2), round(speed.target, 2), round(yaw.control, 3), round(pitch.control, 3),
 			]);
 		}
 		this.log({ k: "f", t, s });

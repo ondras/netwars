@@ -7,7 +7,7 @@
  */
 import { quat, vec3, type ReadonlyVec3 } from "gl-matrix";
 import { segmentHitsSphere } from "../src/collision.ts";
-import { RAPID_FIRE_FACTOR, TUMBLE_SPIN, type Ship } from "../src/entity/ship.ts";
+import { TUMBLE_SPIN, type Ship } from "../src/entity/ship.ts";
 import { SHOT_RADIUS } from "../src/entity/shot.ts";
 import { angleOffNose, LOCK_RANGE } from "../src/lock.ts";
 import type { EntityRecord, Quat, ShotReport, Vec3 } from "../src/net/protocol.ts";
@@ -51,7 +51,7 @@ function rates(ship: Ship): { travel: number; turn: number; shots: number } {
 	return {
 		travel: ship.topSpeed * MARGIN,
 		turn: (Math.hypot(yaw.changeRate, pitch.changeRate) + TUMBLE_SPIN) * MARGIN,
-		shots: (ship.effects.rapid > 0 ? RAPID_FIRE_FACTOR : 1) / PLAYER_GUN.reload * MARGIN,
+		shots: 1 / PLAYER_GUN.reload * MARGIN,
 	};
 }
 
@@ -159,6 +159,8 @@ export interface FiredShot {
 	readonly t: number;
 	readonly p: Vec3;
 	readonly v: Vec3;
+	/** Shield points it takes: decided here, by what powerups the server saw the ship collect */
+	readonly damage: number;
 }
 
 /**

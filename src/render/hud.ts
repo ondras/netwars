@@ -203,11 +203,11 @@ export class HUD implements Renderer {
 		this.ctx.stroke();
 	}
 
-	/** Zero in the middle: forward speed fills upwards, reverse downwards; the tick marks the target speed */
+	/** The throttle, which extra thrust leaves as it is: zero in the middle, forward speed fills upwards, reverse downwards; the tick marks the target speed */
 	private drawSpeed(ship: Ship, x: number, bottom: number): void {
 		const { ctx } = this;
 		const { speed } = ship.engine;
-		const limit = ship.topSpeed;
+		const { limit } = speed;
 
 		const half = METER_HEIGHT / 2;
 		const zero = bottom - half;
@@ -233,8 +233,7 @@ export class HUD implements Renderer {
 		ctx.lineTo(x + METER_WIDTH + 4, target);
 		ctx.stroke();
 
-		ctx.fillText(`SPD ${signed(speed.value, 1)} m/s`, x, bottom + 18);
-		ctx.fillText(`SET ${signed(speed.target, 0)} m/s`, x, bottom + 34);
+		ctx.fillText(`SET ${signed(speed.target)} m/s`, x, bottom + 18);
 	}
 
 	private drawShields(ship: Ship, x: number, bottom: number): void {
@@ -251,20 +250,20 @@ export class HUD implements Renderer {
 		ctx.restore();
 	}
 
-	/** Timed powerups still running, upwards from `bottom` */
+	/** Powerups still working, upwards from `bottom` */
 	private drawEffects(ship: Ship, x: number, bottom: number): void {
 		const lines: string[] = [];
-		if (ship.effects.rapid > 0) { lines.push(`${POWERUPS.rapid.label.toUpperCase()} ${Math.ceil(ship.effects.rapid)} s`); }
+		if (ship.effects.power > 0) { lines.push(`${POWERUPS.power.label.toUpperCase()} ${ship.effects.power}`); }
 		if (ship.effects.boost > 0) { lines.push(`${POWERUPS.boost.label.toUpperCase()} ${Math.ceil(ship.effects.boost)} s`); }
 
 		lines.forEach((line, i) => this.ctx.fillText(line, x, bottom - i * 16));
 	}
 }
 
-/** "+1.5", "-3", "0.0" (never "-0.0") */
-function signed(value: number, digits: number): string {
-	const text = value.toFixed(digits);
+/** "+15", "-3", "0" (never "-0") */
+function signed(value: number): string {
+	const text = value.toFixed(0);
 	const rounded = Number(text);
-	if (rounded == 0) { return (0).toFixed(digits); }
+	if (rounded == 0) { return "0"; }
 	return (rounded > 0 ? `+${text}` : text);
 }

@@ -9,10 +9,12 @@ import { Missile, type MissileOptions } from "./missile.ts";
 /** Control deflection per radian of heading error in steerTowards() */
 const STEER_GAIN = 2;
 
-/** Weapon reload speed-up while the rapid fire effect lasts */
-export const RAPID_FIRE_FACTOR = 2;
-/** Top speed multiplier while the boost effect lasts */
+/** What a power shot does instead of what the gun's shots do: twice the damage, in a colour of its own */
+export const POWER_SHOT = { damage: 50, color: 0xffd426 };
+/** Speed multiplier while extra thrust lasts; the throttle stays where it is */
 export const BOOST_FACTOR = 1.5;
+/** How long extra thrust takes to build up, and to fade once it runs out (s) */
+export const BOOST_RAMP = 0.5;
 
 /** Share of the speed kept after bumping into something */
 export const BUMP_SPEED_KEPT = 0.3;
@@ -28,9 +30,11 @@ export const ROCKET: MissileOptions = { speed: 35, turnRate: 3, lifetime: 5, dam
 /** Where rockets leave the hull, local (m): below the line of sight, like the gun */
 const ROCKET_MOUNT = vec3.fromValues(0, -0.6, -1.5);
 
-/** Remaining time of timed effects (s); 0 when inactive */
+/** What powerups have left a ship with; 0 when nothing */
 export interface Effects {
-	rapid: number;
+	/** Power shots left */
+	power: number;
+	/** Time left of extra thrust (s) */
 	boost: number;
 }
 
@@ -85,7 +89,9 @@ export class Ship extends Entity {
 	/** Finds targets for the rockets; only the player's ship has one */
 	targetLock: TargetLock | null = null;
 
-	readonly effects: Effects = { rapid: 0, boost: 0 };
+	readonly effects: Effects = { power: 0, boost: 0 };
+	/** What extra thrust multiplies the speed the throttle gives by, right now */
+	thrust = 1;
 
 	/** Whose shot or rocket hit this ship last */
 	lastHitBy: Entity | null = null;
@@ -106,9 +112,9 @@ export class Ship extends Entity {
 		return this;
 	}
 
-	/** Speed limit including the boost effect (m/s), forward and reverse */
+	/** The fastest it can fly right now (m/s), forward and reverse; the throttle itself only goes up to engine.speed.limit */
 	get topSpeed(): number {
-		return this.engine.speed.limit * (this.effects.boost > 0 ? BOOST_FACTOR : 1);
+		return this.engine.speed.limit * this.thrust;
 	}
 
 	/**
@@ -143,7 +149,8 @@ export class Ship extends Entity {
 		this.rockets = ROCKET_CAPACITY;
 		this.launch = false;
 		this.lastHitBy = null;
-		this.effects.rapid = this.effects.boost = 0;
+		this.effects.power = this.effects.boost = 0;
+		this.thrust = 1;
 		this.tumble.time = 0;
 		this.engine.speed.value = this.engine.speed.target = 0;
 	}
@@ -179,13 +186,15 @@ export class Ship extends Entity {
 		}
 
 		const { effects } = this;
-		effects.rapid = Math.max(0, effects.rapid - dt);
 		effects.boost = Math.max(0, effects.boost - dt);
+		const ramp = (BOOST_FACTOR - 1) / BOOST_RAMP * dt;
+		this.thrust += Math.max(-ramp, Math.min(ramp, (effects.boost > 0 ? BOOST_FACTOR : 1) - this.thrust));
 
-		this.weapon.update(dt * (effects.rapid > 0 ? RAPID_FIRE_FACTOR : 1));
+		this.weapon.update(dt);
 		if (this.trigger) {
-			const shot = this.weapon.fire(this);
+			const shot = this.weapon.fire(this, effects.power > 0 ? POWER_SHOT : undefined);
 			if (shot) {
+				effects.power = Math.max(0, effects.power - 1);
 				shot.hitOnly = this.shotTargets;
 				world.spawn(shot);
 				world.sound("cannon", this.position);
@@ -220,12 +229,12 @@ export class Ship extends Entity {
 	private updateSpeed(dt: number): void {
 		const speed = this.engine.speed;
 
-		const limit = this.topSpeed;
+		const { limit } = speed;
 		const target = Math.min(limit, Math.max(-limit, speed.target));
 		const maxChange = speed.changeRate * dt;
 		speed.value += Math.max(-maxChange, Math.min(maxChange, target - speed.value));
 
-		vec3.set(this.velocity, 0, 0, -speed.value); /* -Z is the default model orientation */
+		vec3.set(this.velocity, 0, 0, -speed.value * this.thrust); /* -Z is the default model orientation */
 		vec3.transformQuat(this.velocity, this.velocity, this.orientation);
 	}
 }

@@ -139,7 +139,7 @@ export type ClientMessage =
 /* Entities sent in snapshots, by kind */
 export const ENTITY_KINDS = [
 	"pod", "pirate", "raider", "hunter", "gunship", "missile", "rocket", "player", "grapple",
-	"powerup-shields", "powerup-rapid", "powerup-boost", "powerup-rockets",
+	"powerup-shields", "powerup-power", "powerup-boost", "powerup-rockets",
 ] as const;
 export type EntityKind = (typeof ENTITY_KINDS)[number];
 

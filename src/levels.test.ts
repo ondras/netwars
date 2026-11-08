@@ -2,17 +2,19 @@ import { vec3 } from "gl-matrix";
 import { beforeAll, describe, expect, it } from "vitest";
 import { Color } from "./color.ts";
 import { explode } from "./entity/debris.ts";
+import { Entity } from "./entity/entity.ts";
 import { Hunter } from "./entity/hunter.ts";
 import { Pirate } from "./entity/pirate.ts";
 import { Pod } from "./entity/pod.ts";
-import { EFFECT_TIME, Powerup, SHIELD_BONUS } from "./entity/powerup.ts";
-import { BOOST_FACTOR, Ship } from "./entity/ship.ts";
+import { applyPowerup, BOOST_TIME, POWER_SHOTS, Powerup } from "./entity/powerup.ts";
+import { BOOST_FACTOR, BOOST_RAMP, POWER_SHOT, Ship } from "./entity/ship.ts";
 import { Shot } from "./entity/shot.ts";
 import { EnemySpawner } from "./entity/spawner.ts";
 import { triangle } from "./geometry.ts";
 import { LEVELS, levelOutcome } from "./levels.ts";
 import { Loop } from "./loop.ts";
 import { settle, stubModels } from "./testing.ts";
+import { Weapon } from "./weapon.ts";
 
 const STEP = 0.015;
 
@@ -117,52 +119,132 @@ describe("powerups", () => {
 		return loop;
 	}
 
-	it("restore shields, up to the maximum", () => {
+	it("are destroyed by a shot, leaving nothing to collect", () => {
 		const player = shipAt(0, 0, 0);
-		player.shields.value = 30;
+		player.shields.value = 5;
+		const powerup = new Powerup("shields", player);
+		powerup.position[2] = -30;
+		const loop = new Loop();
+		player.trigger = true;
+		loop.scene.push(player, powerup);
+		run(loop, 0.5);
+		expect(powerup.exploded).toBe(true);
+		expect(powerup.collector).toBeNull();
+		expect(player.shields.value).toBe(5);
+	});
+
+	it("are not in the way of enemies' fire, which is only meant for the players", () => {
+		const player = shipAt(0, 0, -60);
+		const powerup = new Powerup("shields", player);
+		powerup.position[2] = -30;
+		const shot = new Shot(vec3.create(), vec3.fromValues(0, 0, -120), new Entity(), 1, 25);
+		shot.hitOnly = [player];
+		const loop = new Loop();
+		loop.scene.push(player, powerup, shot);
+		run(loop, 0.55);
+		expect(powerup.dead).toBe(false);
+		expect(shot.dead).toBe(true);
+	});
+
+	it("restore shields to full", () => {
+		const player = shipAt(0, 0, 0);
+		player.shields.value = 5;
 		collect("shields", player);
-		expect(player.shields.value).toBe(30 + SHIELD_BONUS);
-
-		const healthy = shipAt(0, 0, 0);
-		healthy.shields.value = healthy.shields.max - 5;
-		collect("shields", healthy);
-		expect(healthy.shields.value).toBe(healthy.shields.max);
+		expect(player.shields.value).toBe(player.shields.max);
 	});
 
-	it("double the fire rate for a while", () => {
-		const shotsPerSecond = (player: Ship) => {
-			const loop = new Loop();
-			player.trigger = true;
-			loop.scene.push(player);
-			let fired = 0;
-			for (let i = 0; i < Math.round(1 / STEP); i++) {
-				loop.update(STEP);
-				fired += loop.scene.filter(entity => entity instanceof Shot && vec3.distance(entity.position, entity.previousPosition) == 0).length;
-			}
-			return fired;
-		};
-
-		const normal = shotsPerSecond(shipAt(0, 0, 0));
-		const rapid = shipAt(0, 0, 0);
-		collect("rapid", rapid);
-		expect(rapid.effects.rapid).toBeGreaterThan(EFFECT_TIME - 2);
-		expect(shotsPerSecond(rapid)).toBeGreaterThanOrEqual(2 * normal - 1);
-	});
-
-	it("raise the top speed for a while", () => {
+	it("give shots that do more damage and keep until fired, at the usual rate", () => {
 		const player = shipAt(0, 0, 0);
-		collect("boost", player);
-		const boosted = player.engine.speed.limit * BOOST_FACTOR;
-		expect(player.topSpeed).toBeCloseTo(boosted);
+		const plain = new Weapon().options;
+		collect("power", player);
+		player.engine.speed.target = 0;
+		expect(player.effects.power).toBe(POWER_SHOTS);
 
 		const loop = new Loop();
 		loop.scene.push(player);
-		player.engine.speed.target = 100;
-		run(loop, 3);
-		expect(player.engine.speed.value).toBeCloseTo(boosted);
+		run(loop, 60);
+		expect(player.effects.power).toBe(POWER_SHOTS);
 
-		run(loop, EFFECT_TIME);
-		expect(player.engine.speed.value).toBeCloseTo(player.engine.speed.limit);
+		player.trigger = true;
+		const shots = new Set<Shot>();
+		const seconds = (POWER_SHOTS + 15) * plain.reload;
+		for (let i = 0; i < Math.round(seconds / STEP); i++) {
+			loop.update(STEP);
+			for (const entity of loop.scene) {
+				if (entity instanceof Shot) { shots.add(entity); }
+			}
+		}
+
+		const damage = [...shots].map(shot => shot.damage);
+		expect(damage.slice(0, POWER_SHOTS)).toEqual(Array(POWER_SHOTS).fill(POWER_SHOT.damage));
+		expect(damage.length).toBeGreaterThan(POWER_SHOTS);
+		expect(damage.slice(POWER_SHOTS).every(value => value == plain.damage)).toBe(true);
+		expect(damage.length).toBeLessThanOrEqual(seconds / plain.reload + 1);
+		expect(player.effects.power).toBe(0);
+	});
+
+	it("multiply the speed for a while, with the throttle staying where it is", () => {
+		const player = shipAt(0, 0, 0);
+		collect("boost", player); /* the throttle at 10 */
+
+		const loop = new Loop();
+		loop.scene.push(player);
+		run(loop, 2);
+		expect(player.engine.speed.target).toBe(10);
+		expect(player.engine.speed.value).toBeCloseTo(10);
+		expect(vec3.length(player.velocity)).toBeCloseTo(10 * BOOST_FACTOR);
+
+		const { limit } = player.engine.speed;
+		player.engine.speed.target = 100;
+		run(loop, 2);
+		expect(player.engine.speed.value).toBeCloseTo(limit);
+		expect(vec3.length(player.velocity)).toBeCloseTo(limit * BOOST_FACTOR);
+
+		run(loop, BOOST_TIME);
+		expect(player.engine.speed.value).toBeCloseTo(limit);
+		expect(vec3.length(player.velocity)).toBeCloseTo(limit);
+	});
+
+	it("build up and fade over a moment, without a dip when another one is collected", () => {
+		const player = shipAt(0, 0, 0);
+		player.engine.speed.value = player.engine.speed.target = 10;
+		const loop = new Loop();
+		loop.scene.push(player);
+		const speed = () => vec3.length(player.velocity);
+		const between = () => {
+			expect(speed()).toBeGreaterThan(10.5);
+			expect(speed()).toBeLessThan(10 * BOOST_FACTOR - 0.5);
+		};
+
+		applyPowerup("boost", player);
+		run(loop, BOOST_RAMP / 2);
+		between();
+		run(loop, BOOST_RAMP / 2 + 2 * STEP);
+		expect(speed()).toBeCloseTo(10 * BOOST_FACTOR);
+
+		applyPowerup("boost", player);
+		run(loop, STEP);
+		expect(speed()).toBeCloseTo(10 * BOOST_FACTOR);
+
+		run(loop, BOOST_TIME - STEP);
+		while (player.effects.boost > 0) { run(loop, STEP); }
+		expect(speed()).toBeGreaterThan(10 * BOOST_FACTOR - 1);
+		run(loop, BOOST_RAMP / 2);
+		between();
+		run(loop, BOOST_RAMP / 2 + 2 * STEP);
+		expect(speed()).toBeCloseTo(10);
+	});
+
+	it("are gone from a ship that starts over", () => {
+		const player = shipAt(0, 0, 0);
+		const loop = new Loop();
+		loop.scene.push(player);
+		applyPowerup("boost", player);
+		applyPowerup("power", player);
+		run(loop, 1);
+		player.revive();
+		expect(player.thrust).toBe(1);
+		expect(player.effects).toEqual({ power: 0, boost: 0 });
 	});
 });
 

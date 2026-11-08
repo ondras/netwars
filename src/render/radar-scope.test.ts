@@ -1,0 +1,88 @@
+import { vec3 } from "gl-matrix";
+import { describe, expect, it } from "vitest";
+import { Entity } from "../entity/entity.ts";
+import { Powerup, POWERUPS, type PowerupKind } from "../entity/powerup.ts";
+import { Ship } from "../entity/ship.ts";
+import { RadarScope } from "./radar-scope.ts";
+
+const RANGE = 150;
+
+interface Call {
+	readonly name: string;
+	readonly args: readonly unknown[];
+}
+
+/** Draws the radar on a stand-in that writes down what it is told to do */
+function draw(...entities: Entity[]): Call[] {
+	const calls: Call[] = [];
+	const state: Record<string | symbol, unknown> = {};
+	const ctx = new Proxy(state, {
+		get: (_, name) => (name in state ? state[name] : (...args: unknown[]) => { calls.push({ name: String(name), args }); }),
+		set: (_, name, value) => {
+			state[name] = value;
+			return true;
+		},
+	}) as unknown as CanvasRenderingContext2D;
+	new RadarScope(RANGE).draw(ctx, new Entity(), entities, 0, 0, 260, 160);
+	return calls;
+}
+
+function at<T extends Entity>(entity: T, x: number, y: number, z: number): T {
+	vec3.set(entity.position, x, y, z);
+	return entity;
+}
+
+const powerup = (kind: PowerupKind, x: number, y: number, z: number) => at(new Powerup(kind, []), x, y, z);
+
+/** How the one contact drawn looks */
+function look(calls: readonly Call[]) {
+	const index = calls.findIndex(({ name }) => name == "arc");
+	const [dotX, dotY] = calls[index].args as number[];
+	const texts = calls.filter(({ name }) => name == "fillText").map(({ args }) => args as [string, number, number]);
+	return {
+		dotX,
+		dotY,
+		/** Its outline is drawn: filled dots have none */
+		hollow: calls.slice(index + 1).some(({ name }) => name == "stroke"),
+		letter: texts.find(([text]) => text.length == 1) ?? null,
+	};
+}
+
+describe("radar", () => {
+	it("marks a powerup with its letter beside its dot, level with it, so that it stays put above or below", () => {
+		for (const [kind, y] of [["shields", 30], ["boost", 0], ["rockets", -30]] as const) {
+			const { dotX, dotY, letter } = look(draw(powerup(kind, 0, y, -60)));
+			expect(letter![0]).toBe(POWERUPS[kind].letter);
+			expect(letter![1]).toBeGreaterThan(dotX);
+			expect(letter![2]).toBeCloseTo(dotY);
+		}
+
+		/* a whisker either way is a whisker either way, not a jump */
+		const justAbove = look(draw(powerup("boost", 0, 0.1, -60)));
+		const justBelow = look(draw(powerup("boost", 0, -0.1, -60)));
+		expect(Math.abs(justAbove.letter![2] - justBelow.letter![2])).toBeLessThan(1);
+	});
+
+	it("gives each kind of powerup a letter of its own, and nothing else one", () => {
+		const letters = (Object.keys(POWERUPS) as PowerupKind[]).map(kind => POWERUPS[kind].letter);
+		expect(new Set(letters).size).toBe(letters.length);
+		expect(look(draw(at(new Ship(), 0, 30, -60))).letter).toBeNull();
+	});
+
+	it("shows whether a contact out of range is above or below, hollow", () => {
+		const level = look(draw(at(new Ship(), 0, 0, -400)));
+		const above = look(draw(at(new Ship(), 0, 40, -400)));
+		const below = look(draw(at(new Ship(), 0, -40, -400)));
+		for (const contact of [level, above, below]) { expect(contact.hollow).toBe(true); }
+		expect(above.dotY).toBeLessThan(level.dotY);
+		expect(below.dotY).toBeGreaterThan(level.dotY);
+
+		expect(look(draw(powerup("power", 0, 40, -400))).hollow).toBe(true);
+		expect(look(draw(powerup("power", 0, 40, -400))).letter![0]).toBe(POWERUPS.power.letter);
+	});
+
+	it("fills the dots of contacts within range", () => {
+		expect(look(draw(at(new Ship(), 0, 30, -60))).hollow).toBe(false);
+	});
+
+});

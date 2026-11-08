@@ -1,6 +1,6 @@
 import { DIFFICULTIES } from "./difficulty.ts";
 import {
-	BOOST_GREEN, POWERUPS, RAPID_RED, RAPID_YELLOW, ROCKETS_RED, ROCKETS_WHITE, SHIELDS_BLUE, type PowerupKind,
+	BOOST_GREEN, POWER_RED, POWER_YELLOW, POWERUPS, ROCKETS_RED, ROCKETS_WHITE, SHIELDS_BLUE, type PowerupKind,
 } from "./entity/powerup.ts";
 import { gunshipShape, hunterShape, pirateShape, raiderShape } from "./entity/shapes.ts";
 import { ARENA_SIZE, RESPAWN_DELAY } from "./net/protocol.ts";
@@ -20,11 +20,11 @@ const radarDot = (color: string) => `<span class="radar-dot" style="color: ${col
 /** Flat drawings of the powerup shapes, in their colours */
 const ICONS: Record<PowerupKind, string> = {
 	shields: svg(`<circle cx="12" cy="12" r="7.5" fill="none" stroke="${hex(SHIELDS_BLUE)}" stroke-width="4"/>`),
-	rapid: svg(`
-		<rect x="10" y="4" width="4" height="16" fill="${hex(RAPID_YELLOW)}"/>
-		<rect x="4" y="10" width="16" height="4" fill="${hex(RAPID_YELLOW)}"/>
-		<rect x="9" y="1" width="6" height="4" fill="${hex(RAPID_RED)}"/><rect x="9" y="19" width="6" height="4" fill="${hex(RAPID_RED)}"/>
-		<rect x="1" y="9" width="4" height="6" fill="${hex(RAPID_RED)}"/><rect x="19" y="9" width="4" height="6" fill="${hex(RAPID_RED)}"/>`),
+	power: svg(`
+		<rect x="10" y="4" width="4" height="16" fill="${hex(POWER_YELLOW)}"/>
+		<rect x="4" y="10" width="16" height="4" fill="${hex(POWER_YELLOW)}"/>
+		<rect x="9" y="1" width="6" height="4" fill="${hex(POWER_RED)}"/><rect x="9" y="19" width="6" height="4" fill="${hex(POWER_RED)}"/>
+		<rect x="1" y="9" width="4" height="6" fill="${hex(POWER_RED)}"/><rect x="19" y="9" width="4" height="6" fill="${hex(POWER_RED)}"/>`),
 	boost: svg(`<polygon points="12,2 21,12 15,12 15,22 9,22 9,12 3,12" fill="${hex(BOOST_GREEN)}"/>`),
 	rockets: svg(`<rect x="4" y="4" width="16" height="16" fill="${hex(ROCKETS_WHITE)}"/><rect x="3" y="10" width="18" height="4" fill="${hex(ROCKETS_RED)}"/>`),
 };
@@ -55,11 +55,12 @@ export function helpMarkup(): string {
 			${item(shipIcon(hunterShape(), SHIP_ICON), `Hunter ${radarDot(HUNTER_COLOR)}`, "ignores pods, hunts you")}
 			${item(shipIcon(gunshipShape(), SHIP_ICON), `Gunship ${radarDot(GUNSHIP_COLOR)}`, "a slow, much tougher hunter")}
 		</div>
-		<p class="aside">The dot after each name is its colour on the radar; pods are <span style="color: ${POD_COLOR}">blue</span> there, powerups <span style="color: ${POWERUP_COLOR}">grey</span>.</p>
+		<p class="aside">The dot after each name is its colour on the radar; pods are <span style="color: ${POD_COLOR}">blue</span> there, powerups <span style="color: ${POWERUP_COLOR}">grey</span>, with their letter, given below, beside the dot. A hollow dot is beyond the radar's range; dots stand above or hang below the grid as they are above or below you.</p>
 
 		<h3>Powerups</h3>
-		<div class="items two">
-			${(Object.keys(ICONS) as PowerupKind[]).map(kind => `${ICONS[kind]}<div>${POWERUPS[kind].label}</div>`).join("")}
+		<p>Fly through one to collect it; a shot destroys it.</p>
+		<div class="items">
+			${(Object.keys(ICONS) as PowerupKind[]).map(kind => item(ICONS[kind], `${POWERUPS[kind].label} (${POWERUPS[kind].letter})`, POWERUPS[kind].effect)).join("")}
 		</div>
 
 		<h3>Rockets</h3>

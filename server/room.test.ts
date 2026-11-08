@@ -3,8 +3,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 import type { Entity } from "../src/entity/entity.ts";
 import { Missile } from "../src/entity/missile.ts";
 import type { PlayerShip } from "../src/entity/player-ship.ts";
-import { Powerup } from "../src/entity/powerup.ts";
-import { ROCKET_CAPACITY } from "../src/entity/ship.ts";
+import { applyPowerup, Powerup, POWER_SHOTS } from "../src/entity/powerup.ts";
+import { BOOST_FACTOR, BOOST_RAMP, POWER_SHOT, ROCKET_CAPACITY } from "../src/entity/ship.ts";
 import type { Loop } from "../src/loop.ts";
 import { kindIndex } from "../src/net/kinds.ts";
 import {
@@ -12,11 +12,14 @@ import {
 	type ClientMessage, type EntityRecord, type GameEvent, type OutcomeMessage, type Quat, type ServerMessage, type ShipState, type Snapshot, type StartMessage, type Vec3,
 } from "../src/net/protocol.ts";
 import { settle, stubModels } from "../src/testing.ts";
+import { Weapon } from "../src/weapon.ts";
 import type { Allowance } from "./checks.ts";
 import { Room, type Member } from "./room.ts";
 import { Rooms } from "./rooms.ts";
 
 beforeAll(stubModels);
+
+const PLAYER_GUN_DAMAGE = new Weapon().options.damage;
 
 interface TestMember extends Member {
 	readonly messages: ServerMessage[];
@@ -559,6 +562,78 @@ describe("deathmatch", () => {
 		room.report(guest.id, report({ hits: [{ shot: 1, id: idOf(room, guest, victim), t: t + 0.225 }] }));
 		expect(room.refused).toEqual({ moves: 0, shots: 0, rockets: 0, hits: 0 });
 		expect(victim.shields.value).toBe(75);
+	});
+
+	it("counts a pilot's power shots itself: stronger until they are used up, whatever the browser thinks", async () => {
+		const { room, host, guest } = await match();
+		place(room, host.id, [0, 0, -40]);
+		const from: Vec3 = [0, 0, 0];
+		place(room, guest.id, from);
+		const target = shipOf(room, host.id);
+		const shooter = shipOf(room, guest.id);
+		const id = idOf(room, guest, target);
+		run(room, 0.2);
+
+		shootAt(room, guest, 1, from, [0, 0, -40], id);
+		expect(target.shields.value).toBe(target.shields.max - PLAYER_GUN_DAMAGE);
+
+		target.shields.value = target.shields.max;
+		applyPowerup("power", shooter);
+		shootAt(room, guest, 2, from, [0, 0, -40], id);
+		expect(target.shields.value).toBe(target.shields.max - POWER_SHOT.damage);
+		expect(shooter.effects.power).toBe(POWER_SHOTS - 1);
+		expect(events(host, "shot").at(-1)![8]).toBe(POWER_SHOT.color);
+
+		target.shields.value = target.shields.max;
+		shooter.effects.power = 0;
+		shootAt(room, guest, 3, from, [0, 0, -40], id);
+		expect(target.shields.value).toBe(target.shields.max - PLAYER_GUN_DAMAGE);
+		expect(room.refused).toMatchObject({ shots: 0, hits: 0 });
+	});
+
+	it("believes a ship with extra thrust flying faster than its throttle says, and its shots", async () => {
+		const { room, guest } = await match();
+		place(room, guest.id, [0, 0, 0]);
+		const ship = shipOf(room, guest.id);
+		applyPowerup("boost", ship);
+		run(room, BOOST_RAMP + 0.1);
+
+		const speed = ship.engine.speed.limit;
+		const fast = speed * BOOST_FACTOR;
+		let z = 0;
+		for (let n = 1; n <= 40; n++) {
+			z -= fast * 0.05;
+			const v = -(120 + fast);
+			room.report(guest.id, report({
+				ship: flying([0, 0, z], [0, 0, 0, 1], { speed, target: speed }),
+				shots: (n % 4 == 0 ? [{ n, t: nowIn(room), p: [0, 0, z - 3], v: [0, 0, v] }] : []),
+			}));
+			run(room, 0.05);
+			expect(ship.position[2]).toBeCloseTo(z - fast * 0.05, 0);
+		}
+		expect(ship.engine.speed.value).toBeCloseTo(speed);
+		expect(room.refused).toMatchObject({ moves: 0, shots: 0 });
+	});
+
+	it("lets a shot destroy a powerup, for everyone, and nobody gets it", async () => {
+		const { room, host, guest } = await match();
+		const { loop } = inside(room).level;
+		const powerup = new Powerup("shields", loop.players);
+		vec3.set(powerup.position, 0, 0, -40);
+		loop.spawn(powerup);
+		place(room, guest.id, [0, 0, 0]);
+		place(room, host.id, [100, 100, 100]);
+		run(room, 0.2);
+
+		const id = idOf(room, guest, powerup);
+		shootAt(room, guest, 1, [0, 0, 0], [0, 0, -40], id);
+		run(room, 0.05);
+
+		expect(room.refused.hits).toBe(0);
+		expect(powerup.exploded).toBe(true);
+		expect(powerup.collector).toBeNull();
+		expect(events(host, "explode").map(event => event[2])).toContain(id);
+		expect(events(guest, "powerup")).toHaveLength(0);
 	});
 
 	it("collects powerups through the walls", async () => {

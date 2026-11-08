@@ -122,8 +122,7 @@ export class PlayerPilot implements Pilot, EventListenerObject {
 	update(dt: number, ship: Ship): void {
 		const { speed, yaw, pitch } = ship.engine;
 		const target = speed.target + this.throttle.update(dt) * SPEED_STEP;
-		const limit = ship.topSpeed;
-		speed.target = Math.min(limit, Math.max(-limit, target));
+		speed.target = Math.min(speed.limit, Math.max(-speed.limit, target));
 
 		yaw.control = this.yaw;
 		pitch.control = this.pitch;

@@ -200,7 +200,7 @@ export interface PowerupSpawnerOptions {
 	radius: number;
 }
 
-const POWERUP_KINDS: readonly PowerupKind[] = ["shields", "rapid", "boost", "rockets"];
+const POWERUP_KINDS: readonly PowerupKind[] = ["shields", "power", "boost", "rockets"];
 
 /** Invisible scene member that places random powerups around the pod field, or anywhere in a world that wraps around */
 export class PowerupSpawner extends Entity {

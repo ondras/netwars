@@ -42,8 +42,11 @@ export class Weapon {
 		this.cooldown = Math.max(0, this.cooldown - dt);
 	}
 
-	/** @returns The fired shot, or null while reloading */
-	fire(owner: Entity): Shot | null {
+	/**
+	 * @param load What this shot does differently from the weapon's usual ones
+	 * @returns The fired shot, or null while reloading
+	 */
+	fire(owner: Entity, load: Partial<Pick<WeaponOptions, "damage" | "color">> = {}): Shot | null {
 		if (this.cooldown > 0) { return null; }
 		this.cooldown = this.options.reload;
 
@@ -56,7 +59,7 @@ export class Weapon {
 		const position = vec3.add(vec3.create(), owner.position, offset);
 		const velocity = vec3.scaleAndAdd(vec3.create(), owner.velocity, direction, muzzleSpeed);
 
-		const { lifetime, damage, color } = this.options;
+		const { lifetime, damage, color } = { ...this.options, ...load };
 		return new Shot(position, velocity, owner, lifetime, damage, color);
 	}
 }
