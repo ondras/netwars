@@ -7,7 +7,7 @@ import { Connection, type CloseReason } from "./net/connection.ts";
 import { invitedTo, OnlineMenu } from "./net/online-menu.ts";
 import { RECONNECT_GRACE, type ClientMessage, type MatchResult, type RoomInfo, type ServerMessage } from "./net/protocol.ts";
 import { Leaderboard, score } from "./scores.ts";
-import { effectsVolume, setEffectsVolume, setShipLook, shipLook } from "./settings.ts";
+import { effectsVolume, lastRoomSetup, setEffectsVolume, setLastRoomSetup, setShipLook, shipLook } from "./settings.ts";
 
 const game = new Game(document.querySelector<HTMLElement>("#game")!);
 const leaderboard = new Leaderboard();
@@ -148,16 +148,25 @@ online.onBack = () => {
 	online.hide();
 	menu.showTitle();
 };
-online.onCreate = name => connectThen(name, { type: "create", name, level: menu.selectedLevel, difficulty: difficultyLevel(), look: shipLook() });
+online.onCreate = name => {
+	/* what the host picked last time, unless its level is no more */
+	const last = lastRoomSetup();
+	const setup = (last && LEVELS[last.level] ? last : null);
+	const create: ClientMessage = { type: "create", name, level: setup?.level ?? menu.selectedLevel, difficulty: setup?.difficulty ?? difficultyLevel(), look: shipLook() };
+	void connectThen(name, create, ...(setup ? [{ type: "setup", ...setup } as const] : []));
+};
 online.onJoin = (code, name) => connectThen(name, { type: "join", code, name, look: shipLook() });
-online.onSetup = setup => send({ type: "setup", ...setup });
+online.onSetup = setup => {
+	send({ type: "setup", ...setup });
+	setLastRoomSetup(setup);
+};
 online.onStart = () => send({ type: "start" });
 online.onLeave = () => leaveRoom();
 online.onAddBot = () => send({ type: "addBot" });
 online.onRemoveBot = id => send({ type: "removeBot", id });
 
-/** Connect (unless connected) and send the first message */
-async function connectThen(name: string, message: ClientMessage): Promise<void> {
+/** Connect (unless connected) and send the first messages */
+async function connectThen(name: string, ...messages: ClientMessage[]): Promise<void> {
 	game.unlockAudio(); /* a click: sound may start now, ready for the level the host starts later */
 	leaderboard.remember(name);
 	online.setBusy(true);
@@ -169,7 +178,7 @@ async function connectThen(name: string, message: ClientMessage): Promise<void> 
 			return;
 		}
 	}
-	connection!.send(message);
+	for (const message of messages) { connection!.send(message); }
 }
 
 function attach(opened: Connection): void {
