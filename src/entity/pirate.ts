@@ -54,6 +54,8 @@ export class Pirate extends Ship {
 
 	private readonly players: readonly Ship[];
 	private readonly missiles: boolean;
+	/** Its top speed before the difficulty's thiefSpeed (m/s) */
+	private readonly ownSpeed: number;
 	/** Time to the next missile (s); drawn from the difficulty's interval on the first update */
 	private missileCooldown: number | null = null;
 	private readonly escapeTo = vec3.create();
@@ -69,6 +71,7 @@ export class Pirate extends Ship {
 		super();
 		this.players = toList(players);
 		this.missiles = options.missiles;
+		this.ownSpeed = options.speed;
 		this.geometries = options.shape();
 
 		this.shields.value = this.shields.max = options.shields;
@@ -77,6 +80,7 @@ export class Pirate extends Ship {
 	}
 
 	override update(dt: number, world: World): void {
+		this.engine.speed.limit = this.ownSpeed * world.difficulty.thiefSpeed;
 		this.think(dt, world);
 		super.update(dt, world);
 		this.holdCargo(dt);

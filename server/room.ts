@@ -14,7 +14,7 @@ import { Powerup } from "../src/entity/powerup.ts";
 import { POWER_SHOT, ROCKET, ROCKET_CAPACITY, Ship } from "../src/entity/ship.ts";
 import { Shot } from "../src/entity/shot.ts";
 import { EnemySpawner, PowerupSpawner } from "../src/entity/spawner.ts";
-import { ENEMY_KINDS, LEVELS, levelOutcome, POD_FIELD, type EnemyKind, type Outcome } from "../src/levels.ts";
+import { ENEMY_KINDS, enemyWaves, LEVELS, levelOutcome, POD_FIELD, type EnemyKind, type Outcome } from "../src/levels.ts";
 import { Loop } from "../src/loop.ts";
 import { extraOf, kindIndex, kindOf } from "../src/net/kinds.ts";
 import {
@@ -516,7 +516,8 @@ export class Room {
 			vec3.set(pod.position, (Math.random() - 0.5) * 2 * POD_FIELD, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 2 * POD_FIELD);
 			return pod;
 		});
-		const enemies = new EnemySpawner(loop.players, config.enemies, { max: config.maxEnemies, interval: config.enemyInterval });
+		const waves = enemyWaves(config, this.members.length, DIFFICULTIES[this.difficulty].thieves);
+		const enemies = new EnemySpawner(loop.players, waves.enemies, { max: waves.max, interval: waves.interval });
 		loop.scene.push(...loop.players, ...pods, enemies);
 		if (config.powerups) { loop.scene.push(new PowerupSpawner(loop.players, config.powerups)); }
 		return { ...level, enemies, pods, match: null };

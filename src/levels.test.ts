@@ -1,6 +1,7 @@
 import { vec3 } from "gl-matrix";
 import { beforeAll, describe, expect, it } from "vitest";
 import { Color } from "./color.ts";
+import { DIFFICULTIES } from "./difficulty.ts";
 import { explode } from "./entity/debris.ts";
 import { Entity } from "./entity/entity.ts";
 import { Hunter } from "./entity/hunter.ts";
@@ -11,7 +12,7 @@ import { BOOST_FACTOR, BOOST_RAMP, POWER_SHOT, Ship } from "./entity/ship.ts";
 import { Shot } from "./entity/shot.ts";
 import { EnemySpawner } from "./entity/spawner.ts";
 import { triangle } from "./geometry.ts";
-import { LEVELS, levelOutcome } from "./levels.ts";
+import { enemyWaves, LEVELS, levelOutcome, PILOT_PRESSURE, type EnemyKind } from "./levels.ts";
 import { Loop } from "./loop.ts";
 import { settle, stubModels } from "./testing.ts";
 import { Weapon } from "./weapon.ts";
@@ -64,6 +65,70 @@ describe("levels", () => {
 
 	it("have unique names, since best scores are kept by level name", () => {
 		expect(new Set(LEVELS.map(level => level.name)).size).toBe(LEVELS.length);
+	});
+});
+
+describe("enemy waves", () => {
+	const kinds = (enemies: readonly EnemyKind[]) => ({
+		thieves: enemies.filter(kind => kind == "pirate" || kind == "raider").length,
+		fighters: enemies.filter(kind => kind == "hunter" || kind == "gunship"),
+	});
+
+	it("are the level as it is for one pilot and the usual share of thieves", () => {
+		for (const level of LEVELS) {
+			expect(enemyWaves(level, 1, 1), level.name).toEqual({ enemies: level.enemies, max: level.maxEnemies, interval: level.enemyInterval });
+		}
+	});
+
+	it("bring more thieves, the other enemies as they were, and more at once and sooner, so that the level lasts as long", () => {
+		const siege = LEVELS[5];
+		const plain = enemyWaves(siege, 1, 1);
+		const more = enemyWaves(siege, 1, 1.5);
+		expect(kinds(more.enemies).thieves).toBe(Math.round(1.5 * kinds(plain.enemies).thieves));
+		expect(kinds(more.enemies).fighters).toEqual(kinds(plain.enemies).fighters);
+		expect(more.max).toBeGreaterThan(plain.max);
+		expect(more.interval * more.enemies.length).toBeCloseTo(plain.interval * plain.enemies.length);
+		/* a fighter comes about as far through the order as it did */
+		const place = (enemies: readonly EnemyKind[]) => enemies.indexOf("gunship") / enemies.length;
+		expect(Math.abs(place(more.enemies) - place(plain.enemies))).toBeLessThan(0.1);
+
+		const fewer = enemyWaves(LEVELS[0], 1, 0.1);
+		expect(fewer.enemies).toEqual(["pirate"]); /* never none */
+	});
+
+	it("bring more of every kind for more pilots: as many fighters for each, and more thieves", () => {
+		const swarm = LEVELS[3];
+		const alone = kinds(swarm.enemies);
+		for (const pilots of [2, 3, 4]) {
+			const team = kinds(enemyWaves(swarm, pilots, 1).enemies);
+			expect(team.fighters.length).toBe(Math.round(alone.fighters.length * PILOT_PRESSURE.fighters[pilots - 1]));
+			expect(team.fighters.length).toBe(alone.fighters.length * pilots);
+			expect(team.thieves).toBe(Math.round(alone.thieves * PILOT_PRESSURE.thieves[pilots - 1]));
+			expect(team.thieves).toBeGreaterThan(alone.thieves);
+		}
+	});
+
+	it("get busier and hit harder with the difficulty", () => {
+		const { easy, normal, hard } = DIFFICULTIES;
+		expect(easy.thieves).toBeLessThan(normal.thieves);
+		expect(normal.thieves).toBeLessThan(hard.thieves);
+		expect(easy.thiefSpeed).toBeLessThan(normal.thiefSpeed);
+		expect(easy.hunterDamage).toBeLessThan(normal.hunterDamage);
+		expect(normal.hunterDamage).toBeLessThan(hard.hunterDamage);
+		expect(easy.missileDamage).toBeLessThanOrEqual(normal.missileDamage);
+		expect(normal.missileDamage).toBeLessThanOrEqual(hard.missileDamage);
+	});
+
+	it("are slower thieves on easy", () => {
+		const fly = (difficulty: (typeof DIFFICULTIES)[keyof typeof DIFFICULTIES]) => {
+			const pirate = new Pirate([]);
+			const loop = new Loop();
+			loop.difficulty = difficulty;
+			loop.scene.push(pirate);
+			run(loop, 0.1);
+			return pirate.engine.speed.limit;
+		};
+		expect(fly(DIFFICULTIES.easy)).toBeCloseTo(fly(DIFFICULTIES.normal) * DIFFICULTIES.easy.thiefSpeed);
 	});
 });
 

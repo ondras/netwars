@@ -9,7 +9,7 @@ import { PlayerShip } from "./entity/player-ship.ts";
 import { Pod } from "./entity/pod.ts";
 import { ROCKET_CAPACITY, type Ship } from "./entity/ship.ts";
 import { EnemySpawner, PowerupSpawner } from "./entity/spawner.ts";
-import { LEVELS, levelOutcome, POD_FIELD, type EnemyKind, type Outcome } from "./levels.ts";
+import { enemyWaves, LEVELS, levelOutcome, POD_FIELD, type EnemyKind, type Outcome } from "./levels.ts";
 import { TargetLock } from "./lock.ts";
 import { DEFAULT_RULES, Loop } from "./loop.ts";
 import { RESPAWN_DELAY, type ClientMessage, type MatchResult, type OutcomeMessage, type PlayerInfo, type Snapshot, type StartMessage } from "./net/protocol.ts";
@@ -182,7 +182,8 @@ export class Game {
 
 		const { scene, players } = this.loop;
 		this.loop.difficulty = difficulty();
-		const enemies = new EnemySpawner(players, config.enemies, { max: config.maxEnemies, interval: config.enemyInterval });
+		const waves = enemyWaves(config, 1, difficulty().thieves);
+		const enemies = new EnemySpawner(players, waves.enemies, { max: waves.max, interval: waves.interval });
 
 		scene.push(ship, ...pods, enemies);
 		if (config.powerups) { scene.push(new PowerupSpawner(players, config.powerups)); }

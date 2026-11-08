@@ -2,9 +2,11 @@ import { quat, vec3 } from "gl-matrix";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { Entity } from "../src/entity/entity.ts";
 import { Missile } from "../src/entity/missile.ts";
+import { DIFFICULTIES } from "../src/difficulty.ts";
 import type { PlayerShip } from "../src/entity/player-ship.ts";
 import { applyPowerup, Powerup, POWER_SHOTS } from "../src/entity/powerup.ts";
 import { BOOST_FACTOR, BOOST_RAMP, POWER_SHOT, ROCKET_CAPACITY } from "../src/entity/ship.ts";
+import { enemyWaves, LEVELS } from "../src/levels.ts";
 import type { Loop } from "../src/loop.ts";
 import { kindIndex } from "../src/net/kinds.ts";
 import {
@@ -132,7 +134,7 @@ describe("game rooms", () => {
 		expect(snapshots(host).length).toBeGreaterThanOrEqual(3); /* every 45 ms */
 		expect(records(host, "player")).toHaveLength(2);
 		expect(records(host, "pod")).toHaveLength(12);
-		expect(lastSnapshot(host)).toMatchObject({ shields: 100, pods: 12, enemies: 4 });
+		expect(lastSnapshot(host)).toMatchObject({ shields: 100, pods: 12, enemies: enemyWaves(LEVELS[0], 2, DIFFICULTIES.normal.thieves).enemies.length });
 	});
 
 	it("put a player's ship where their browser says, and pass their shots on to the others only", async () => {
