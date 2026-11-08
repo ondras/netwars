@@ -6,6 +6,7 @@ import { DIFFICULTIES, type DifficultyLevel } from "../src/difficulty.ts";
 import { explode } from "../src/entity/debris.ts";
 import type { Entity } from "../src/entity/entity.ts";
 import { Missile } from "../src/entity/missile.ts";
+import { Pirate } from "../src/entity/pirate.ts";
 import { PlayerShip } from "../src/entity/player-ship.ts";
 import { LOOK_COUNT } from "../src/entity/player-ships.ts";
 import { Pod } from "../src/entity/pod.ts";
@@ -124,6 +125,8 @@ interface Level {
 	readonly match: Match | null;
 	/** The recording; null when not recording, or once it is over */
 	log: MatchLog | null;
+	/** Co-op, recording: every enemy that has arrived, with its shields when last looked at and whether it had a pod */
+	readonly enemiesSeen: Map<Ship, { shields: number; carrying: boolean }>;
 }
 
 /** An event for everyone, for one member only (`to`), or for everyone but one (`except`) */
@@ -498,7 +501,9 @@ export class Room {
 			k: "start", time: new Date().toISOString(), room: this.code, run, mode: this.mode, size: loop.size,
 			pilots: this.members.map(({ id, name, bot, look }) => ({ id, name, bot: Boolean(bot), look })),
 		});
-		const level = { run, index, difficulty: this.difficulty, loop, flyers, steps: 0, outcome: null, result: null, history: new ViewHistory(), log };
+		const level = {
+			run, index, difficulty: this.difficulty, loop, flyers, steps: 0, outcome: null, result: null, history: new ViewHistory(), log, enemiesSeen: new Map(),
+		};
 
 		if (deathmatch) {
 			loop.scene.push(...loop.players, new PowerupSpawner(loop.players, arenaPowerups(loop.size!)));
@@ -622,8 +627,8 @@ export class Room {
 			return;
 		}
 
+		if (target instanceof Ship || target instanceof Pod) { target.lastHitBy = flyer.ship; }
 		if (target instanceof Ship) {
-			target.lastHitBy = flyer.ship;
 			if (target.absorb(shot.damage)) {
 				/* the shooter heard it already */
 				this.queue.push({ event: ["sound", this.time, "hit", ...rounded(target.position, 1)], except: flyer.member.id });
@@ -669,15 +674,37 @@ export class Room {
 		}
 
 		if (entity instanceof PlayerShip && entity.exploded) { this.onShipDestroyed(entity); }
+		if (this.level?.log && !this.level.match) { this.logRemoved(entity); }
 	}
 
-	/** Deathmatch: a frag for whoever hit the ship last, and its pilot flies again soon */
+	/** Co-op, recording: an enemy destroyed or gone with a pod, or a pod destroyed by a pilot's fire */
+	private logRemoved(entity: Entity): void {
+		const t = this.time;
+		if (entity instanceof Pirate && entity.escaped) {
+			this.log({ k: "escaped", t, on: this.id(entity) });
+		} else if (entity instanceof Ship && !(entity instanceof PlayerShip) && entity.exploded) {
+			this.log({ k: "downed", t, by: this.shooter(entity), on: this.id(entity) });
+		} else if (entity instanceof Pod && entity.exploded) {
+			this.log({ k: "podShot", t, by: this.shooter(entity) });
+		}
+	}
+
+	/** The pilot whose shot or rocket hit it last, if any */
+	private shooter(entity: Ship | Pod): number | null {
+		return (entity.lastHitBy ? this.pilots.get(entity.lastHitBy) ?? null : null);
+	}
+
+	/** Deathmatch: a frag for whoever hit the ship last, and its pilot flies again soon. Co-op: it is only recorded */
 	private onShipDestroyed(ship: PlayerShip): void {
 		const level = this.level;
-		const match = level?.match;
-		if (!match || level.outcome) { return; }
-
+		if (!level || level.outcome) { return; }
 		const victim = this.pilots.get(ship)!;
+		const match = level.match;
+		if (!match) {
+			this.log({ k: "kill", t: this.time, by: null, on: victim });
+			return;
+		}
+
 		const flyer = level.flyers.get(victim);
 		if (flyer) { flyer.respawn = RESPAWN_DELAY; }
 
@@ -713,6 +740,7 @@ export class Room {
 		}
 
 		if (level.log) { this.logHits(level, t); }
+		if (level.log && !level.match) { this.logEnemies(level, t); }
 
 		let matchResult: MatchResult | undefined;
 		let ended = false;
@@ -743,7 +771,10 @@ export class Room {
 			for (const { member } of level.flyers.values()) { member.send(result); }
 			this.broadcastRoom();
 			this.logRefused();
-			this.log({ k: "end", t, reason: matchResult?.reason ?? level.outcome! });
+			this.log({
+				k: "end", t, reason: matchResult?.reason ?? level.outcome!,
+				...(level.match ? {} : { pods: [result.podsLeft, result.podsTotal], destroyed: result.destroyed }),
+			});
 			this.closeLog();
 		}
 	}
@@ -796,6 +827,26 @@ export class Room {
 		}
 	}
 
+	/** Co-op: enemies arriving, the shields they lose and to whom, and pods they grab */
+	private logEnemies(level: Level, t: number): void {
+		for (const entity of level.loop.scene) {
+			if (!(entity instanceof Ship) || entity instanceof PlayerShip || entity.dead) { continue; }
+			let seen = level.enemiesSeen.get(entity);
+			if (!seen) {
+				seen = { shields: entity.shields.value, carrying: false };
+				level.enemiesSeen.set(entity, seen);
+				this.log({ k: "enemy", t, id: this.id(entity), kind: kindOf(entity) ?? "enemy" });
+			}
+			if (entity.shields.value < seen.shields) {
+				this.log({ k: "struck", t, by: this.shooter(entity), on: this.id(entity), damage: round(seen.shields - entity.shields.value, 1) });
+			}
+			seen.shields = entity.shields.value;
+			const carrying = (entity instanceof Pirate && entity.cargo !== null);
+			if (carrying && !seen.carrying) { this.log({ k: "grab", t, by: this.id(entity) }); }
+			seen.carrying = carrying;
+		}
+	}
+
 	/** Where every ship is and how it is being flown, the same for people and bots */
 	private logFrame(level: Level, t: number): void {
 		const s: number[][] = [];
@@ -808,7 +859,16 @@ export class Room {
 				Math.round(ship.shields.value), round(speed.value * ship.thrust, 2), round(speed.target, 2), round(yaw.control, 3), round(pitch.control, 3),
 			]);
 		}
-		this.log({ k: "f", t, s });
+		if (level.match) {
+			this.log({ k: "f", t, s });
+			return;
+		}
+		const e: number[][] = [];
+		for (const entity of level.loop.scene) {
+			if (!(entity instanceof Ship) || entity instanceof PlayerShip || entity.dead) { continue; }
+			e.push([this.id(entity), ...rounded(entity.position), Math.round(entity.shields.value), (entity instanceof Pirate && entity.cargo ? 1 : 0)]);
+		}
+		this.log({ k: "f", t, s, e });
 	}
 
 	private sendSnapshots(level: Level, t: number): void {

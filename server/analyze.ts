@@ -1,6 +1,7 @@
 /*
- * What a recording says about how each pilot flies and shoots: `pnpm analyze recordings/<file>.jsonl`.
+ * What a recording says about how each pilot flies and shoots: `pnpm analyze recordings/<file>.jsonl ...`.
  * People and bots are measured the same way, so that their numbers can be set side by side.
+ * Co-op recordings get their own report, of what each pilot did against the enemies, and one for all of them together.
  */
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -314,13 +315,214 @@ export function report(stats: readonly PilotStats[]): string {
 export const readRecording = (path: string): LogEntry[] =>
 	readFileSync(path, "utf8").split("\n").filter(Boolean).map(line => JSON.parse(line) as LogEntry);
 
+/** Co-op: what one pilot did against the enemies */
+export interface CoopPilotStats {
+	name: string;
+	bot: boolean;
+	/** Time spent flying (s) */
+	flying: number;
+	deaths: number;
+	shots: number;
+	rockets: number;
+	/** Shots and rockets that took an enemy's shields, the last one included */
+	hits: number;
+	/** Enemies destroyed, by kind */
+	downed: Record<string, number>;
+	/** How far off the enemies were when hit (m) */
+	hitRanges: number[];
+	/** Shield points lost */
+	damageTaken: number;
+	powerups: number;
+	/** Pods destroyed by its own fire */
+	podsShot: number;
+}
+
+/** Co-op: one level or several, and every pilot in them */
+export interface CoopStats {
+	levels: number;
+	won: number;
+	/** Time the levels took (s) */
+	time: number;
+	/** Pods there were, those carried off and those destroyed by the players' own fire */
+	pods: number;
+	podsStolen: number;
+	podsShot: number;
+	/** Enemies that came, by kind */
+	enemies: Record<string, number>;
+	/** Pods grabbed by pirates, whether they got away with them or not */
+	grabs: number;
+	/** How long pod thieves lasted, from arriving to being destroyed or getting away (s) */
+	thiefLives: number[];
+	pilots: CoopPilotStats[];
+}
+
+const THIEVES = new Set(["pirate", "raider"]);
+const add = (counts: Record<string, number>, key: string, amount = 1) => { counts[key] = (counts[key] ?? 0) + amount; };
+
+export function analyzeCoop(entries: readonly LogEntry[]): CoopStats {
+	const start = entries.find((entry): entry is Extract<LogEntry, { k: "start" }> => entry.k == "start");
+	if (!start) { throw new Error("Not a recording: it has no start line"); }
+	const pilots = new Map(start.pilots.map(({ id, name, bot }) => [id, {
+		name, bot, flying: 0, deaths: 0, shots: 0, rockets: 0, hits: 0, downed: {}, hitRanges: [], damageTaken: 0, powerups: 0, podsShot: 0,
+	} as CoopPilotStats]));
+	const stats: CoopStats = { levels: 1, won: 0, time: 0, pods: 0, podsStolen: 0, podsShot: 0, enemies: {}, grabs: 0, thiefLives: [], pilots: [...pilots.values()] };
+	const kinds = new Map<number, string>();
+	const arrived = new Map<number, number>();
+	/* where everything was in the last frame */
+	const pilotAt = new Map<number, vec3>();
+	const enemyAt = new Map<number, vec3>();
+	let first: number | null = null;
+	let last: number | null = null;
+
+	const hit = (by: number | null, on: number) => {
+		const pilot = (by === null ? undefined : pilots.get(by));
+		if (!pilot) { return null; }
+		pilot.hits++;
+		const from = pilotAt.get(by!);
+		const to = enemyAt.get(on);
+		if (from && to) { pilot.hitRanges.push(vec3.distance(from, to)); }
+		return pilot;
+	};
+	const gone = (on: number, t: number) => {
+		const since = arrived.get(on);
+		if (since !== undefined && THIEVES.has(kinds.get(on) ?? "")) { stats.thiefLives.push(t - since); }
+	};
+
+	for (const entry of entries) {
+		switch (entry.k) {
+			case "f": {
+				const dt = (last === null ? 0 : Math.min(0.2, entry.t - last));
+				first ??= entry.t;
+				last = entry.t;
+				for (const row of entry.s) {
+					pilotAt.set(row[0], positionOf(row));
+					const pilot = pilots.get(row[0]);
+					if (pilot) { pilot.flying += dt; }
+				}
+				enemyAt.clear();
+				for (const row of entry.e ?? []) { enemyAt.set(row[0], positionOf(row)); }
+			} break;
+			case "shot": { const pilot = pilots.get(entry.by); if (pilot) { pilot.shots++; } } break;
+			case "rocket": { const pilot = pilots.get(entry.by); if (pilot) { pilot.rockets++; } } break;
+			case "hit": { const pilot = pilots.get(entry.on); if (pilot) { pilot.damageTaken += entry.damage; } } break;
+			case "kill": { const pilot = pilots.get(entry.on); if (pilot) { pilot.deaths++; } } break;
+			case "powerup": { const pilot = pilots.get(entry.by); if (pilot) { pilot.powerups++; } } break;
+			case "enemy":
+				kinds.set(entry.id, entry.kind);
+				arrived.set(entry.id, entry.t);
+				add(stats.enemies, entry.kind);
+			break;
+			case "struck": hit(entry.by, entry.on); break;
+			case "downed": {
+				const pilot = hit(entry.by, entry.on);
+				if (pilot) { add(pilot.downed, kinds.get(entry.on) ?? "enemy"); }
+				gone(entry.on, entry.t);
+			} break;
+			case "grab": stats.grabs++; break;
+			case "escaped":
+				stats.podsStolen++;
+				gone(entry.on, entry.t);
+			break;
+			case "podShot": {
+				stats.podsShot++;
+				const pilot = (entry.by === null ? undefined : pilots.get(entry.by));
+				if (pilot) { pilot.podsShot++; }
+			} break;
+			case "end":
+				if (entry.reason == "won") { stats.won++; }
+				stats.pods = entry.pods?.[1] ?? 0;
+				stats.time = entry.t - (first ?? entry.t);
+			break;
+		}
+	}
+	return stats;
+}
+
+/** Several levels as one: pilots are matched by name, people and bots apart */
+export function mergeCoop(all: readonly CoopStats[]): CoopStats {
+	const merged: CoopStats = { levels: 0, won: 0, time: 0, pods: 0, podsStolen: 0, podsShot: 0, enemies: {}, grabs: 0, thiefLives: [], pilots: [] };
+	for (const stats of all) {
+		merged.levels += stats.levels;
+		merged.won += stats.won;
+		merged.time += stats.time;
+		merged.pods += stats.pods;
+		merged.podsStolen += stats.podsStolen;
+		merged.podsShot += stats.podsShot;
+		merged.grabs += stats.grabs;
+		merged.thiefLives.push(...stats.thiefLives);
+		for (const [kind, count] of Object.entries(stats.enemies)) { add(merged.enemies, kind, count); }
+		for (const pilot of stats.pilots) {
+			let into = merged.pilots.find(({ name, bot }) => name == pilot.name && bot == pilot.bot);
+			if (!into) {
+				into = { ...pilot, downed: {}, hitRanges: [], flying: 0, deaths: 0, shots: 0, rockets: 0, hits: 0, damageTaken: 0, powerups: 0, podsShot: 0 };
+				merged.pilots.push(into);
+			}
+			into.flying += pilot.flying;
+			into.deaths += pilot.deaths;
+			into.shots += pilot.shots;
+			into.rockets += pilot.rockets;
+			into.hits += pilot.hits;
+			into.damageTaken += pilot.damageTaken;
+			into.powerups += pilot.powerups;
+			into.podsShot += pilot.podsShot;
+			into.hitRanges.push(...pilot.hitRanges);
+			for (const [kind, count] of Object.entries(pilot.downed)) { add(into.downed, kind, count); }
+		}
+	}
+	return merged;
+}
+
+const total = (counts: Record<string, number>) => Object.values(counts).reduce((a, b) => a + b, 0);
+const byKind = (counts: Record<string, number>) => Object.entries(counts).map(([kind, count]) => `${count} ${kind}`).join(", ") || "none";
+const perMinute = (count: number, seconds: number) => (seconds > 0 ? (60 * count / seconds).toFixed(1) : "-");
+
+const COOP_ROWS: ReadonlyArray<readonly [string, (pilot: CoopPilotStats) => string]> = [
+	["time flying", p => `${p.flying.toFixed(0)} s`],
+	["deaths", p => String(p.deaths)],
+	["enemies destroyed", p => String(total(p.downed))],
+	["  per minute flying", p => perMinute(total(p.downed), p.flying)],
+	["  of which", p => byKind(p.downed)],
+	["shots per minute", p => perMinute(p.shots, p.flying)],
+	["hits / shots", p => `${p.hits} / ${p.shots} (${percent(p.shots ? p.hits / p.shots : 0)})`],
+	["hits from, median", p => `${median(p.hitRanges).toFixed(0)} m`],
+	["rockets", p => String(p.rockets)],
+	["shield points lost / min", p => perMinute(p.damageTaken, p.flying)],
+	["powerups", p => String(p.powerups)],
+	["pods it shot", p => String(p.podsShot)],
+];
+
+/** What the pilots did, side by side, and how the levels went */
+export function coopReport(stats: CoopStats): string {
+	const header = ["", ...stats.pilots.map(p => `${p.name}${p.bot ? " (bot)" : ""}`)];
+	const table = [header, ...COOP_ROWS.map(([label, value]) => [label, ...stats.pilots.map(value)])];
+	const widths = header.map((_, i) => Math.max(...table.map(row => row[i].length)));
+	return [
+		`${stats.levels} level(s), ${stats.won} won, ${(stats.time / 60).toFixed(1)} min`,
+		`pods: ${stats.podsStolen + stats.podsShot} lost of ${stats.pods} (${stats.podsStolen} carried off, ${stats.podsShot} shot by players), ${stats.grabs} grabbed`,
+		`enemies: ${byKind(stats.enemies)}; pod thieves lasted ${median(stats.thiefLives).toFixed(0)} s (median)`,
+		"",
+		...table.map(row => row.map((cell, i) => (i ? cell.padStart(widths[i]) : cell.padEnd(widths[i]))).join("  ")),
+	].join("\n");
+}
+
+const isCoop = (entries: readonly LogEntry[]) => entries.some(entry => entry.k == "start" && entry.mode == "coop");
+
 if (import.meta.url == pathToFileURL(process.argv[1] ?? "").href) {
 	const paths = process.argv.slice(2);
 	if (!paths.length) {
 		console.error("Usage: pnpm analyze <recording.jsonl> ...");
 		process.exit(1);
 	}
+	const coop: CoopStats[] = [];
 	for (const path of paths) {
-		console.log(`${path}\n${report(analyze(readRecording(path)))}\n`);
+		const entries = readRecording(path);
+		if (isCoop(entries)) {
+			const stats = analyzeCoop(entries);
+			coop.push(stats);
+			console.log(`${path}\n${coopReport(stats)}\n`);
+		} else {
+			console.log(`${path}\n${report(analyze(entries))}\n`);
+		}
 	}
+	if (coop.length > 1) { console.log(`All the co-op levels together\n${coopReport(mergeCoop(coop))}`); }
 }

@@ -5,6 +5,8 @@ import { Entity } from "./entity.ts";
 export class Pod extends Entity {
 	/** Entity carrying this pod away; while set, the carrier positions the pod */
 	carrier: Entity | null = null;
+	/** Whose shot or rocket hit it last */
+	lastHitBy: Entity | null = null;
 
 	constructor() {
 		super();

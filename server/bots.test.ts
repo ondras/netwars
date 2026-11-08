@@ -10,10 +10,11 @@ import { Powerup } from "../src/entity/powerup.ts";
 import { EnemySpawner } from "../src/entity/spawner.ts";
 import { angleOffNose } from "../src/lock.ts";
 import type { Loop } from "../src/loop.ts";
+import { LEVELS } from "../src/levels.ts";
 import { MAX_PLAYERS, type ServerMessage, type Snapshot } from "../src/net/protocol.ts";
 import { settle, stubModels } from "../src/testing.ts";
-import { analyze, report } from "./analyze.ts";
-import { fight, tournament } from "./arena.ts";
+import { analyze, analyzeCoop, coopReport, report } from "./analyze.ts";
+import { defend, fight, tournament } from "./arena.ts";
 import type { Allowance } from "./checks.ts";
 import type { LogEntry } from "./match-log.ts";
 import { Room, type Member } from "./room.ts";
@@ -446,6 +447,25 @@ describe("the arena", () => {
 });
 
 describe("recordings", () => {
+	it("of co-op levels account for every enemy and every pod", async () => {
+		const entries: LogEntry[] = [];
+		const { outcome } = await defend([botTraits(), botTraits()], 1, "normal", () => ({ write: entry => { entries.push(entry); }, close: () => {} }));
+		const stats = analyzeCoop(entries);
+		const sum = (counts: Record<string, number>) => Object.values(counts).reduce((a, b) => a + b, 0);
+
+		expect(stats.pods).toBe(outcome.podsTotal);
+		expect(stats.pods - stats.podsStolen - stats.podsShot).toBe(outcome.podsLeft);
+		if (outcome.outcome == "won") {
+			expect(sum(stats.enemies)).toBe(LEVELS[1].enemies.length);
+			expect(stats.pilots.reduce((count, pilot) => count + sum(pilot.downed), 0) + stats.podsStolen).toBe(LEVELS[1].enemies.length);
+		}
+		for (const pilot of stats.pilots) {
+			expect(pilot.flying).toBeGreaterThan(30);
+			expect(pilot.hits).toBeLessThanOrEqual(pilot.shots + pilot.rockets);
+		}
+		expect(coopReport(stats)).toContain("enemies destroyed");
+	});
+
 	it("have the same numbers for every pilot, and the analysis reads them", () => {
 		const entries: LogEntry[] = [];
 		let closed = 0;

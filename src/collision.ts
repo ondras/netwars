@@ -68,7 +68,7 @@ export function resolveHits(entities: readonly Entity[], world: World, spares: (
 		if (!hit) { continue; }
 
 		shot.dead = true;
-		if (hit instanceof Ship) { hit.lastHitBy = shot.owner; }
+		if (hit instanceof Ship || hit instanceof Pod) { hit.lastHitBy = shot.owner; }
 		const survives = (hit instanceof Ship && hit.absorb(shot.damage));
 		if (survives) {
 			world.sound(shot.impactSound, hit.position);
