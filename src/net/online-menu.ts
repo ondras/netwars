@@ -78,8 +78,6 @@ export class OnlineMenu {
 		for (const mode of GAME_MODES) { this.modeSelect.append(new Option(MODE_LABELS[mode], mode)); }
 		for (const frags of FRAG_LIMITS) { this.fragSelect.append(new Option(`${frags} frags`, String(frags))); }
 		for (const minutes of TIME_LIMITS) { this.timeSelect.append(new Option(`${minutes} minutes`, String(minutes))); }
-		element<HTMLElement>("lobby-match-description").textContent =
-			"Every pilot for themselves in a cube with no walls: fly out of one side and you come back in on the other. A destroyed ship flies again after a moment. The match ends at the frag limit or the time limit, whichever comes first.";
 
 		const setup = () => {
 			const difficulty = this.difficultySelect.value as DifficultyLevel;
