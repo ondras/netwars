@@ -158,14 +158,13 @@ describe("game server", () => {
 		const { room } = await host.next("welcome");
 		expect(room).toMatchObject({ mode: "coop", fragLimit: 10, timeLimit: 5 });
 
-		host.send({ type: "setup", mode: "deathmatch", level: 0, difficulty: "normal", fragLimit: 1000, timeLimit: 5, arenaSize: 400 });
-		host.send({ type: "setup", mode: "deathmatch", level: 0, difficulty: "normal", fragLimit: 20, timeLimit: 10, arenaSize: 500 });
-		host.send({ type: "setup", mode: "deathmatch", level: 0, difficulty: "normal", fragLimit: 20, timeLimit: 10, arenaSize: 800 });
+		host.send({ type: "setup", mode: "deathmatch", level: 0, difficulty: "normal", fragLimit: 1000, timeLimit: 5 });
+		host.send({ type: "setup", mode: "deathmatch", level: 0, difficulty: "normal", fragLimit: 20, timeLimit: 10 });
 		const updated = await host.next("room", ({ room }) => room.mode == "deathmatch");
-		expect(updated.room).toMatchObject({ fragLimit: 20, timeLimit: 10, arenaSize: 800 });
+		expect(updated.room).toMatchObject({ fragLimit: 20, timeLimit: 10 });
 
 		host.send({ type: "start" });
-		expect((await host.next("start")).arena).toMatchObject({ fragLimit: 20, size: 800 });
+		expect((await host.next("start")).arena).toMatchObject({ fragLimit: 20, size: 400 });
 		expect((await host.next("snapshot")).match).toMatchObject({ left: expect.any(Number) });
 
 		host.send({ type: "leave" });

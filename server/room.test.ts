@@ -8,7 +8,7 @@ import { BOOST_FACTOR, BOOST_RAMP, POWER_SHOT, ROCKET_CAPACITY } from "../src/en
 import type { Loop } from "../src/loop.ts";
 import { kindIndex } from "../src/net/kinds.ts";
 import {
-	DEFAULT_ARENA_SIZE as ARENA_SIZE, RECONNECT_GRACE, RESPAWN_DELAY,
+	arenaSizeFor, MIN_ARENA_SIZE as ARENA_SIZE, RECONNECT_GRACE, RESPAWN_DELAY,
 	type ClientMessage, type EntityRecord, type GameEvent, type OutcomeMessage, type Quat, type ServerMessage, type ShipState, type Snapshot, type StartMessage, type Vec3,
 } from "../src/net/protocol.ts";
 import { settle, stubModels } from "../src/testing.ts";
@@ -445,7 +445,7 @@ describe("deathmatch", () => {
 		const guest = member(2);
 		const room = new Room("ABCD", host, 0, "normal");
 		room.join(guest);
-		room.setup(host.id, { mode: "deathmatch", level: 0, difficulty: "normal", fragLimit, timeLimit, arenaSize: ARENA_SIZE });
+		room.setup(host.id, { mode: "deathmatch", level: 0, difficulty: "normal", fragLimit, timeLimit });
 		room.start(host.id);
 		await settle();
 		run(room, 0.1);
@@ -636,21 +636,23 @@ describe("deathmatch", () => {
 		expect(events(guest, "powerup")).toHaveLength(0);
 	});
 
-	it("is fought in the cube the host picked, with as many powerups for its size", async () => {
+	it("is fought in a cube sized for its pilots, with as many powerups for its size", async () => {
+		expect([1, 2, 3, 4].map(arenaSizeFor)).toEqual([400, 400, 500, 600]);
+
 		const host = member(1);
 		const room = new Room("ABCD", host, 0, "normal");
-		room.setup(host.id, { mode: "deathmatch", level: 0, difficulty: "normal", fragLimit: 10, timeLimit: 5, arenaSize: 800 });
-		expect(room.info().arenaSize).toBe(800);
+		room.setup(host.id, { mode: "deathmatch", level: 0, difficulty: "normal", fragLimit: 10, timeLimit: 5 });
+		for (const id of [2, 3, 4]) { room.join(member(id)); }
 		room.start(host.id);
 		await settle();
 
-		expect(inside(room).level.loop.size).toBe(800);
-		expect(startOf(host).arena).toMatchObject({ size: 800 });
-		for (const axis of startOf(host).spawn) { expect(Math.abs(axis)).toBeLessThanOrEqual(400); }
+		expect(inside(room).level.loop.size).toBe(600);
+		expect(startOf(host).arena).toMatchObject({ size: 600 });
+		for (const axis of startOf(host).spawn) { expect(Math.abs(axis)).toBeLessThanOrEqual(300); }
 
 		run(room, 30);
 		const powerups = inside(room).level.loop.scene.filter(entity => entity instanceof Powerup);
-		expect(powerups.length).toBeGreaterThan(4); /* the smallest cube has 4 at most; this one has 8 times the room */
+		expect(powerups.length).toBeGreaterThan(4); /* the smallest cube has 4 at most; this one has 3.4 times the room */
 	});
 
 	it("collects powerups through the walls", async () => {

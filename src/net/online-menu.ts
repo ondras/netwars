@@ -2,7 +2,7 @@ import { DIFFICULTIES, isDifficultyLevel, type DifficultyLevel } from "../diffic
 import { lookName, shipGeometries } from "../entity/player-ships.ts";
 import type { LevelConfig } from "../levels.ts";
 import { shipIcon } from "../render/ship-icon.ts";
-import { ARENA_SIZES, CODE_LENGTH, FRAG_LIMITS, GAME_MODES, MAX_PLAYERS, TIME_LIMITS, type GameMode, type RoomInfo, type RoomSetup } from "./protocol.ts";
+import { CODE_LENGTH, FRAG_LIMITS, GAME_MODES, MAX_PLAYERS, TIME_LIMITS, type GameMode, type RoomInfo, type RoomSetup } from "./protocol.ts";
 
 const MODE_LABELS: Record<GameMode, string> = { coop: "Co-op", deathmatch: "Deathmatch" };
 
@@ -50,11 +50,10 @@ export class OnlineMenu {
 	private readonly difficultySelect = element<HTMLSelectElement>("lobby-difficulty");
 	private readonly fragSelect = element<HTMLSelectElement>("lobby-frags");
 	private readonly timeSelect = element<HTMLSelectElement>("lobby-time");
-	private readonly arenaSelect = element<HTMLSelectElement>("lobby-arena");
 	private readonly levels: readonly LevelConfig[];
 
 	private get setupSelects(): HTMLSelectElement[] {
-		return [this.modeSelect, this.levelSelect, this.difficultySelect, this.fragSelect, this.timeSelect, this.arenaSelect];
+		return [this.modeSelect, this.levelSelect, this.difficultySelect, this.fragSelect, this.timeSelect];
 	}
 
 	constructor(levels: readonly LevelConfig[]) {
@@ -79,7 +78,6 @@ export class OnlineMenu {
 		for (const mode of GAME_MODES) { this.modeSelect.append(new Option(MODE_LABELS[mode], mode)); }
 		for (const frags of FRAG_LIMITS) { this.fragSelect.append(new Option(`${frags} frags`, String(frags))); }
 		for (const minutes of TIME_LIMITS) { this.timeSelect.append(new Option(`${minutes} minutes`, String(minutes))); }
-		for (const size of ARENA_SIZES) { this.arenaSelect.append(new Option(`${size} m cube`, String(size))); }
 		element<HTMLElement>("lobby-match-description").textContent =
 			"Every pilot for themselves in a cube with no walls: fly out of one side and you come back in on the other. A destroyed ship flies again after a moment. The match ends at the frag limit or the time limit, whichever comes first.";
 
@@ -92,7 +90,6 @@ export class OnlineMenu {
 				difficulty,
 				fragLimit: Number(this.fragSelect.value),
 				timeLimit: Number(this.timeSelect.value),
-				arenaSize: Number(this.arenaSelect.value),
 			});
 		};
 		for (const select of this.setupSelects) { select.onchange = setup; }
@@ -183,7 +180,6 @@ export class OnlineMenu {
 		this.difficultySelect.value = room.difficulty;
 		this.fragSelect.value = String(room.fragLimit);
 		this.timeSelect.value = String(room.timeLimit);
-		this.arenaSelect.value = String(room.arenaSize);
 		for (const select of this.setupSelects) { select.disabled = !host; }
 		element<HTMLElement>("lobby-description").textContent = this.levels[room.level]?.description ?? "";
 		element<HTMLElement>("lobby-coop").hidden = room.mode != "coop";

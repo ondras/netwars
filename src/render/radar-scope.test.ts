@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { Entity } from "../entity/entity.ts";
 import { Powerup, POWERUPS, type PowerupKind } from "../entity/powerup.ts";
 import { Ship } from "../entity/ship.ts";
-import { ARENA_SIZES } from "../net/protocol.ts";
+import { MIN_ARENA_SIZE } from "../net/protocol.ts";
 import { RADAR_REACH, SENSE_FADE } from "../senses.ts";
 import { RadarScope } from "./radar-scope.ts";
 
@@ -121,7 +121,7 @@ describe("radar", () => {
 		});
 
 		it("reaches less than half the smallest arena: a contact changes sides only out of reach", () => {
-			expect(RADAR_REACH).toBeLessThan(Math.min(...ARENA_SIZES) / 2);
+			expect(RADAR_REACH).toBeLessThan(MIN_ARENA_SIZE / 2);
 		});
 	});
 });

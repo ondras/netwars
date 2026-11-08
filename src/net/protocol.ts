@@ -37,9 +37,16 @@ export const DEFAULT_FRAG_LIMIT = 10;
 /** Minutes */
 export const TIME_LIMITS = [3, 5, 10, 15] as const;
 export const DEFAULT_TIME_LIMIT = 5;
-/** Deathmatch: sides of the cube the host can pick; leaving it on one side is entering it on the other (m) */
-export const ARENA_SIZES = [400, 600, 800] as const;
-export const DEFAULT_ARENA_SIZE = 400;
+/** Deathmatch: side of the cube for two pilots, the smallest; leaving it on one side is entering it on the other (m) */
+export const MIN_ARENA_SIZE = 400;
+
+/**
+ * Deathmatch: side of the cube for so many pilots, bots too (m): 400, 500 and 600 for 2, 3 and 4. How often a pilot runs
+ * into another goes with how many others there are over the volume: this keeps it as it is for two in the smallest cube.
+ */
+export function arenaSizeFor(pilots: number): number {
+	return Math.round(MIN_ARENA_SIZE * Math.cbrt(Math.max(1, pilots - 1)) / 100) * 100;
+}
 /** Deathmatch: from being destroyed to flying again (s) */
 export const RESPAWN_DELAY = 3;
 
@@ -69,8 +76,6 @@ export interface RoomSetup {
 	fragLimit: number;
 	/** Deathmatch: minutes that end the match */
 	timeLimit: number;
-	/** Deathmatch: side of the cube (m), one of ARENA_SIZES */
-	arenaSize: number;
 }
 
 export interface RoomInfo extends RoomSetup {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ARENA_SIZES } from "./net/protocol.ts";
+import { MIN_ARENA_SIZE } from "./net/protocol.ts";
 import { HEARING_REACH, RADAR_REACH, SENSE_FADE, senseFade, SIGHT_REACH } from "./senses.ts";
 
 describe("a pilot's senses in a deathmatch", () => {
@@ -17,6 +17,6 @@ describe("a pilot's senses in a deathmatch", () => {
 	});
 
 	it("never take in two copies of anything: all reach less than half the smallest arena", () => {
-		for (const reach of [SIGHT_REACH, RADAR_REACH, HEARING_REACH]) { expect(reach).toBeLessThan(Math.min(...ARENA_SIZES) / 2); }
+		for (const reach of [SIGHT_REACH, RADAR_REACH, HEARING_REACH]) { expect(reach).toBeLessThan(MIN_ARENA_SIZE / 2); }
 	});
 });

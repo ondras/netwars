@@ -156,7 +156,7 @@ async function play(connection: Connection, seconds: number): Promise<{ room: Ro
 
 	const room = new Room("ABCD", member(0), 0, "normal");
 	room.join(member(1));
-	room.setup(1, { mode: (connection.coop ? "coop" : "deathmatch"), level: 5, difficulty: "easy", fragLimit: 30, timeLimit: 15, arenaSize: 400 });
+	room.setup(1, { mode: (connection.coop ? "coop" : "deathmatch"), level: 5, difficulty: "easy", fragLimit: 30, timeLimit: 15 });
 	room.start(1);
 	await settle();
 

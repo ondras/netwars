@@ -17,7 +17,7 @@ import { ENEMY_KINDS, LEVELS, levelOutcome, POD_FIELD, type EnemyKind, type Outc
 import { Loop } from "../src/loop.ts";
 import { extraOf, kindIndex, kindOf } from "../src/net/kinds.ts";
 import {
-	DEFAULT_ARENA_SIZE, DEFAULT_FRAG_LIMIT, DEFAULT_TIME_LIMIT, MAX_PLAYERS, RECONNECT_GRACE, RESPAWN_DELAY, round, SNAPSHOT_STEPS,
+	arenaSizeFor, DEFAULT_FRAG_LIMIT, DEFAULT_TIME_LIMIT, MAX_PLAYERS, MIN_ARENA_SIZE, RECONNECT_GRACE, RESPAWN_DELAY, round, SNAPSHOT_STEPS,
 	type ClientMessage, type EntityRecord, type GameEvent, type GameMode, type HitReport, type MatchResult, type OutcomeMessage, type Quat,
 	type RocketReport, type RoomInfo, type RoomSetup, type RoomState, type ServerMessage, type ShipState, type ShotReport, type StartMessage,
 } from "../src/net/protocol.ts";
@@ -52,10 +52,9 @@ const MAX_HITS = 20;
 const START_GAP = 8;
 /** Deathmatch: places tried for a ship to start from, the one farthest from the others is taken */
 const SPAWN_TRIES = 12;
-/** Deathmatch: powerups are around for whoever gets there first */
 /** Deathmatch: powerups in a cube of a side of size (m): as many to the cubic metre as in the smallest one, coming as often */
 function arenaPowerups(size: number): { interval: number; max: number } {
-	const volume = (size / DEFAULT_ARENA_SIZE) ** 3;
+	const volume = (size / MIN_ARENA_SIZE) ** 3;
 	return { interval: 12 / volume, max: Math.round(4 * volume) };
 }
 
@@ -152,7 +151,6 @@ export class Room {
 	mode: GameMode = "coop";
 	fragLimit: number = DEFAULT_FRAG_LIMIT;
 	timeLimit: number = DEFAULT_TIME_LIMIT;
-	arenaSize: number = DEFAULT_ARENA_SIZE;
 	state: RoomState = "lobby";
 	/** Reports not believed so far: nothing happens to whoever sent them, but it shows when the limits are too tight */
 	readonly refused = { moves: 0, shots: 0, rockets: 0, hits: 0 };
@@ -195,7 +193,6 @@ export class Room {
 			difficulty: this.difficulty,
 			fragLimit: this.fragLimit,
 			timeLimit: this.timeLimit,
-			arenaSize: this.arenaSize,
 			state: this.state,
 		};
 	}
@@ -295,7 +292,7 @@ export class Room {
 	}
 
 	/** Host, between levels */
-	setup(memberId: number, { mode, level, difficulty, fragLimit, timeLimit, arenaSize }: RoomSetup): void {
+	setup(memberId: number, { mode, level, difficulty, fragLimit, timeLimit }: RoomSetup): void {
 		if (memberId != this.host || this.state == "playing") { return; }
 		if (mode != "deathmatch") { this.removeBots(); }
 		this.mode = mode;
@@ -303,7 +300,6 @@ export class Room {
 		this.difficulty = difficulty;
 		this.fragLimit = fragLimit;
 		this.timeLimit = timeLimit;
-		this.arenaSize = arenaSize;
 		this.broadcastRoom();
 	}
 
@@ -470,7 +466,7 @@ export class Room {
 		const loop = new Loop();
 		loop.debris = false; /* nobody watches here */
 		loop.difficulty = DIFFICULTIES[this.difficulty];
-		if (deathmatch) { loop.size = this.arenaSize; }
+		if (deathmatch) { loop.size = arenaSizeFor(this.members.length); }
 		/* players' ships are moved by their browsers, which also handle their bumps */
 		loop.rules = (scene, world) => {
 			resolveHits(scene, world);
@@ -507,7 +503,7 @@ export class Room {
 		const level = { run, index, difficulty: this.difficulty, loop, flyers, steps: 0, outcome: null, result: null, history: new ViewHistory(), log };
 
 		if (deathmatch) {
-			loop.scene.push(...loop.players, new PowerupSpawner(loop.players, arenaPowerups(this.arenaSize)));
+			loop.scene.push(...loop.players, new PowerupSpawner(loop.players, arenaPowerups(loop.size!)));
 			const frags = new Map(this.members.map(({ id }) => [id, 0]));
 			return { ...level, enemies: null, pods: [], match: { fragLimit: this.fragLimit, timeLeft: this.timeLimit * 60, frags } };
 		}
