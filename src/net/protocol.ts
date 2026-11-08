@@ -198,6 +198,8 @@ export interface Snapshot {
 	ship: number;
 	/** Id of a pilot's ship → which ship and colours it is */
 	looks: Record<number, number>;
+	/** Id of a pilot's ship → that pilot's id, for their name (RoomInfo.players) */
+	pilots: Record<number, number>;
 	match?: MatchState;
 }
 

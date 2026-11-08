@@ -15,9 +15,10 @@ import { DEFAULT_RULES, Loop } from "./loop.ts";
 import { RESPAWN_DELAY, type ClientMessage, type MatchResult, type OutcomeMessage, type PlayerInfo, type Snapshot, type StartMessage } from "./net/protocol.ts";
 import { OnlineSession } from "./net/session.ts";
 import { IdlePilot, PlayerPilot, type Pilot } from "./pilot.ts";
-import { HUD } from "./render/hud.ts";
+import { HUD, type Label } from "./render/hud.ts";
 import { WebGLRenderer } from "./render/webgl.ts";
-import { effectsVolume, shipLook } from "./settings.ts";
+import { SIGHT_REACH, senseFade } from "./senses.ts";
+import { effectsVolume, namesShown, shipLook } from "./settings.ts";
 
 /** Camera turn rate while no level is running, and after one ends (rad/s) */
 const IDLE_TURN = 0.015;
@@ -253,6 +254,7 @@ export class Game {
 		this.hud.status = null;
 		this.hud.lines = null;
 		this.hud.notices = null;
+		this.hud.labels = null;
 	}
 
 	/** Your ship: flown from the cockpit, so never drawn */
@@ -274,6 +276,7 @@ export class Game {
 		this.hud.ship = session.ship;
 		this.hud.status = () => this.status();
 		this.hud.notices = () => this.matchNotices();
+		if (session.online) { this.hud.labels = () => this.nameLabels(); }
 		if (session.online?.arena) { this.hud.lines = () => this.matchScores(); }
 	}
 
@@ -291,6 +294,18 @@ export class Game {
 		}
 		const podsLeft = local!.pods.filter(pod => !pod.dead).length;
 		return `${name} · ENEMIES ${local!.enemies.remaining} · PODS ${podsLeft}/${local!.pods.length}`;
+	}
+
+	/** The other pilots' names over their ships, unless turned off; in a deathmatch they fade out with the ships */
+	private nameLabels(): Label[] {
+		const online = this.session?.online;
+		if (!online || !namesShown()) { return []; }
+		return online.players.flatMap(ship => {
+			const pilot = online.pilotOf(ship);
+			if (ship == online.ship || ship.dead || pilot === undefined) { return []; }
+			const fade = (this.scene.limitedSight ? senseFade(vec3.distance(ship.position, this.camera.position), SIGHT_REACH) : 1);
+			return (fade > 0 ? [{ at: ship.position, text: this.pilotName(pilot), fade }] : []);
+		});
 	}
 
 	private pilotName(id: number): string {

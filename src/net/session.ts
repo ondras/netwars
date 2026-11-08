@@ -63,6 +63,8 @@ export class OnlineSession {
 	private shipId: number;
 	private readonly copies = new Map<number, Entity>();
 	private readonly idOf = new WeakMap<Entity, number>();
+	/** Copies of other pilots' ships → their pilots' ids */
+	private readonly pilotIds = new WeakMap<Entity, number>();
 	/** Ids of entities that blew up: never shown again, even if an older snapshot still has them */
 	private readonly gone = new Set<number>();
 	private readonly waiting: Received[] = [];
@@ -178,6 +180,11 @@ export class OnlineSession {
 		this.offset = null;
 	}
 
+	/** Whose ship this copy is: a player id, as in the room's list of players */
+	pilotOf(ship: Entity): number | undefined {
+		return this.pilotIds.get(ship);
+	}
+
 	/** Teammates still flying */
 	get teammates(): Ship[] {
 		return this.players.filter(ship => ship != this.ship && !ship.dead);
@@ -225,6 +232,8 @@ export class OnlineSession {
 			this.copies.set(id, copy);
 			this.idOf.set(copy, id);
 			if (copy instanceof PlayerShip) { this.players.push(copy); }
+			const pilot = received.snapshot.pilots[id];
+			if (pilot !== undefined) { this.pilotIds.set(copy, pilot); }
 			this.setFrom(copy, record);
 			this.loop.spawn(copy);
 		}

@@ -904,12 +904,13 @@ export class Room {
 		const pods = level.pods.filter(pod => !pod.dead).length;
 		const match = (level.match ? { match: { left: Math.max(0, round(level.match.timeLeft, 1)), frags: Object.fromEntries(level.match.frags) } } : {});
 		const looks = Object.fromEntries([...level.flyers.values()].map(({ member, ship }) => [this.id(ship), member.look]));
+		const pilots = Object.fromEntries([...level.flyers.values()].map(({ member, ship }) => [this.id(ship), member.id]));
 		for (const { member, ship } of level.flyers.values()) {
 			const ev = this.queue
 				.filter(({ to, except }) => (to === undefined || to == member.id) && except != member.id)
 				.map(({ event }) => event);
 			const e = (rockets.size ? records.filter(([id]) => rockets.get(id) != member.id) : records);
-			member.send({ type: "snapshot", t, e, ev, enemies, pods, shields: Math.round(ship.shields.value), ship: this.id(ship), looks, ...match });
+			member.send({ type: "snapshot", t, e, ev, enemies, pods, shields: Math.round(ship.shields.value), ship: this.id(ship), looks, pilots, ...match });
 		}
 		this.queue = [];
 	}

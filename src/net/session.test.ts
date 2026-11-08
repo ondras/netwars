@@ -40,10 +40,10 @@ function setup(arena: StartMessage["arena"] = null) {
 	loop.onSound = name => sounds.push(name);
 
 	/** Arrives now, sent at server time t (no delay: the clocks match); this player's ship is always in it, unless told otherwise */
-	const receive = (t: number, records: EntityRecord[], ev: GameEvent[] = [], shields = 100, own: { ship: number; flying: boolean; looks?: Record<number, number> } = { ship: MY_SHIP, flying: true }) => {
+	const receive = (t: number, records: EntityRecord[], ev: GameEvent[] = [], shields = 100, own: { ship: number; flying: boolean; looks?: Record<number, number>; pilots?: Record<number, number> } = { ship: MY_SHIP, flying: true }) => {
 		clock.now = t;
 		const e = (own.flying && !records.some(([id]) => id == own.ship) ? [...records, record(own.ship, "player", [0, 0, 0], shields)] : records);
-		session.receive({ type: "snapshot", t, e, ev, enemies: 2, pods: 3, shields, ship: own.ship, looks: own.looks ?? {} } satisfies Snapshot);
+		session.receive({ type: "snapshot", t, e, ev, enemies: 2, pods: 3, shields, ship: own.ship, looks: own.looks ?? {}, pilots: own.pilots ?? {} } satisfies Snapshot);
 	};
 	/** Steps while the local clock runs on */
 	const run = (seconds: number) => {
@@ -69,6 +69,16 @@ describe("online session", () => {
 
 		const other = loop.scene.find(entity => entity instanceof PlayerShip && entity != ship)!;
 		expect(other.geometries).toBe(shipGeometries(look));
+	});
+
+	it("knows whose ship another pilot's is, for their name", () => {
+		const { loop, ship, session, clock, receive, run } = setup();
+		receive(0, [record(TEAMMATE, "player", [0, 0, -20])], [], 100, { ship: MY_SHIP, flying: true, pilots: { [TEAMMATE]: 2 } });
+		clock.now = INTERPOLATION_DELAY;
+		run(2 * loop.step);
+		const other = loop.scene.find(entity => entity instanceof PlayerShip && entity != ship)!;
+		expect(session.pilotOf(other)).toBe(2);
+		expect(session.pilotOf(ship)).toBeUndefined();
 	});
 
 	it("shows the server's entities a moment in the past, moving smoothly between snapshots", async () => {

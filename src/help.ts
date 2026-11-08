@@ -47,6 +47,7 @@ export function helpMarkup(): string {
 			<dt>W / S</dt><dd>faster / slower, below zero is reverse</dd>
 			<dt>Enter / Space</dt><dd>rocket, once locked on</dd>
 			<dt>Esc</dt><dd>pause</dd>
+			<dt>N</dt><dd>online: names over the other pilots, on or off</dd>
 		</dl>
 
 		<h3>Enemies</h3>

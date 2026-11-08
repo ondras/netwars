@@ -7,7 +7,7 @@ import { Connection, type CloseReason } from "./net/connection.ts";
 import { invitedTo, OnlineMenu } from "./net/online-menu.ts";
 import { RECONNECT_GRACE, type ClientMessage, type MatchResult, type RoomInfo, type ServerMessage } from "./net/protocol.ts";
 import { Leaderboard, score } from "./scores.ts";
-import { effectsVolume, lastRoomSetup, setEffectsVolume, setLastRoomSetup, setShipLook, shipLook } from "./settings.ts";
+import { effectsVolume, lastRoomSetup, namesShown, setEffectsVolume, setLastRoomSetup, setNamesShown, setShipLook, shipLook } from "./settings.ts";
 
 const game = new Game(document.querySelector<HTMLElement>("#game")!);
 const leaderboard = new Leaderboard();
@@ -349,6 +349,9 @@ window.addEventListener("keydown", e => {
 	}
 
 	if (e.key == "Enter" && menu.singlePlayerVisible && !(document.activeElement instanceof HTMLButtonElement)) { menu.start(); }
+
+	/* online: the other pilots' names, on or off; not while typing */
+	if (e.code == "KeyN" && game.online && !(e.target instanceof Element && e.target.closest("input, textarea, select"))) { setNamesShown(!namesShown()); }
 });
 
 menu.showTitle();

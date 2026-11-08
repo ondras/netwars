@@ -116,9 +116,10 @@ describe("game rooms", () => {
 		await settle();
 		room.setLook(host.id, 9); /* the level is on: the ship in flight stays what it is */
 		run(room, 0.1);
-		const { looks, e } = lastSnapshot(guest);
-		const players = e.filter(record => record[1] == kindIndex("player")).map(([id]) => looks[id]);
-		expect(players.sort((a, b) => a - b)).toEqual([4, 7]);
+		const { looks, pilots, e } = lastSnapshot(guest);
+		const players = e.filter(record => record[1] == kindIndex("player")).map(([id]) => id);
+		expect(players.map(id => looks[id]).sort((a, b) => a - b)).toEqual([4, 7]);
+		expect(players.map(id => pilots[id]).sort((a, b) => a - b)).toEqual([host.id, guest.id].sort((a, b) => a - b)); /* whose is which, for names */
 	});
 
 	it("start a level for everyone, then send snapshots of every ship and pod", async () => {

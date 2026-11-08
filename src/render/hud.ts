@@ -28,6 +28,16 @@ const METER_BOTTOM = 56;
 /** Height of one rocket in the rocket gauge, at most (px) */
 const ROCKET_SLOT = 28;
 
+/** How far above its ship a pilot's name is (px) */
+const LABEL_RISE = 14;
+
+/** Text over a point in the scene, such as a pilot's name over their ship; `fade` 0..1 */
+export interface Label {
+	readonly at: ReadonlyVec3;
+	readonly text: string;
+	readonly fade: number;
+}
+
 /** Distance ahead of the ship where the crosshair is placed (m) */
 const AIM_DISTANCE = 40;
 
@@ -49,6 +59,8 @@ export class HUD implements Renderer {
 	notices: (() => readonly string[]) | null = null;
 	/** In a deathmatch: the radar reaches only RADAR_REACH, and its grid is as wide */
 	limitedRadar = false;
+	/** Online: other pilots' names over their ships */
+	labels: (() => readonly Label[]) | null = null;
 
 	private readonly ctx = this.node.getContext("2d")!;
 	private readonly radar = new RadarScope(RADAR_RANGE);
@@ -93,6 +105,7 @@ export class HUD implements Renderer {
 		this.camera.update();
 		mat4.multiply(this.viewProjection, this.camera.pMatrix, this.camera.vMatrix);
 
+		this.drawLabels();
 		this.drawCrosshair(ship);
 		this.drawLock(ship);
 		this.drawStick(ship, width, height);
@@ -109,6 +122,20 @@ export class HUD implements Renderer {
 		const clip = vec4.transformMat4(vec4.create(), vec4.fromValues(point[0], point[1], point[2], 1), this.viewProjection);
 		if (clip[3] <= 0) { return null; }
 		return [(clip[0] / clip[3] + 1) / 2 * this.width, (1 - clip[1] / clip[3]) / 2 * this.height];
+	}
+
+	/** Each label a little above its point, as much as it shows */
+	private drawLabels(): void {
+		const { ctx } = this;
+		ctx.save();
+		ctx.textAlign = "center";
+		for (const { at, text, fade } of this.labels?.() ?? []) {
+			const point = this.toScreen(at);
+			if (!point) { continue; }
+			ctx.globalAlpha = fade;
+			ctx.fillText(text, point[0], point[1] - LABEL_RISE);
+		}
+		ctx.restore();
 	}
 
 	/** Where shots fired now will be at AIM_DISTANCE */

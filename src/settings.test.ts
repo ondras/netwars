@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { effectsVolume, lastRoomSetup, readRoomSetup, setEffectsVolume, setLastRoomSetup } from "./settings.ts";
+import { effectsVolume, lastRoomSetup, namesShown, readRoomSetup, setEffectsVolume, setLastRoomSetup, setNamesShown } from "./settings.ts";
 import type { RoomSetup } from "./net/protocol.ts";
 
 const SETUP: RoomSetup = { mode: "deathmatch", level: 2, difficulty: "hard", fragLimit: 20, timeLimit: 10 };
@@ -16,6 +16,13 @@ describe("settings", () => {
 		expect(effectsVolume()).toBe(0);
 		setEffectsVolume(0.35);
 		expect(effectsVolume()).toBe(0.35);
+	});
+
+	it("show other pilots' names until turned off", () => {
+		expect(namesShown()).toBe(true);
+		setNamesShown(false);
+		expect(namesShown()).toBe(false);
+		setNamesShown(true);
 	});
 
 	it("remember the room setup picked last, with nothing remembered at first", () => {
