@@ -80,7 +80,6 @@ game.onOutcome = (result: LevelResult) => {
 	const last = (next < LEVELS.length ? "" : " That was the last level.");
 	const [title, text] = {
 		"won": [`Level ${level + 1} complete`, `Pods saved: ${podsLeft} of ${podsTotal}.${last}`],
-		"ship-destroyed": [(result.online ? "All ships destroyed" : "Ship destroyed"), `Level ${level + 1}: ${name}`],
 		"pods-lost": ["All pods lost", `Level ${level + 1}: ${name}`],
 		"match-over": ["", ""], /* shown above */
 	}[outcome];

@@ -38,7 +38,7 @@ export function helpMarkup(): string {
 	const { easy, hard } = DIFFICULTIES;
 
 	return `
-		<p>Guard the pods. Win when no enemies are left and you still have a pod; lose your ship or every pod and it's over.</p>
+		<p>Guard the pods. Win when no enemies are left and you still have a pod; lose every pod and it's over. A destroyed ship flies again ${RESPAWN_DELAY} s later, near the pods.</p>
 
 		<h3>Controls</h3>
 		<dl>

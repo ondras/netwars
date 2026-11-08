@@ -52,7 +52,7 @@ function run(room: Room, seconds: number): void {
 }
 
 /** The ships the room flies for its members (not reachable from outside) */
-type Reachable = { level: { flyers: Map<number, { ship: PlayerShip; allowance: Allowance }>; loop: Loop }; byId: Map<number, Entity>; time: number };
+type Reachable = { level: { flyers: Map<number, { ship: PlayerShip; allowance: Allowance }>; loop: Loop; pods: Entity[] }; byId: Map<number, Entity>; time: number };
 const inside = (room: Room) => room as unknown as Reachable;
 const shipOf = (room: Room, id: number) => inside(room).level.flyers.get(id)!.ship;
 const entityOf = (room: Room, id: number) => inside(room).byId.get(id)!;
@@ -177,16 +177,27 @@ describe("game rooms", () => {
 		expect(events(guest, "sound").some(event => event[2] == "hit")).toBe(false); /* …the shooter heard it already */
 	});
 
-	it("end the level once every player's ship is gone, and go back to the lobby when the host says", async () => {
+	it("bring a destroyed ship back by the pods, end the level once every pod is gone, and go back to the lobby when the host says", async () => {
 		const { room, host, guest } = await twoPlayers();
-		shipOf(room, host.id).dead = true;
+		for (const id of [host.id, guest.id]) {
+			const ship = shipOf(room, id);
+			vec3.set(ship.position, 100, 0, 0);
+			ship.absorb(1000);
+			ship.dead = ship.exploded = true;
+		}
 		run(room, 0.05);
-		expect(room.state).toBe("playing");
+		expect(room.state).toBe("playing"); /* every ship is gone, and still the level goes on */
 
-		shipOf(room, guest.id).dead = true;
+		run(room, RESPAWN_DELAY);
+		const back = shipOf(room, host.id);
+		expect(back.dead).toBe(false);
+		expect(back.shields.value).toBe(back.shields.max);
+		expect(vec3.length(back.position)).toBeLessThan(10);
+
+		for (const pod of inside(room).level.pods) { pod.dead = true; }
 		run(room, 0.05);
 		expect(room.state).toBe("over");
-		expect(host.messages.find(message => message.type == "outcome")).toMatchObject({ outcome: "ship-destroyed", podsLeft: 12 });
+		expect(host.messages.find(message => message.type == "outcome")).toMatchObject({ outcome: "pods-lost", podsLeft: 0 });
 
 		room.toLobby(guest.id); /* not the host */
 		expect(room.state).toBe("over");
@@ -243,17 +254,16 @@ describe("game rooms", () => {
 	});
 
 	it("give a player back the outcome of the level that ended while they were away", async () => {
-		const { room, host, guest } = await twoPlayers();
+		const { room, guest } = await twoPlayers();
 		room.disconnected(guest.id);
-		shipOf(room, host.id).dead = true;
-		shipOf(room, guest.id).dead = true;
+		for (const pod of inside(room).level.pods) { pod.dead = true; }
 		run(room, 0.05);
 		expect(room.state).toBe("over");
 
 		guest.messages.length = 0;
 		room.reconnected(guest.id);
 		expect(guest.messages.map(({ type }) => type)).toEqual(["welcome", "outcome"]);
-		expect(guest.messages[1]).toMatchObject({ outcome: "ship-destroyed", podsLeft: 12 });
+		expect(guest.messages[1]).toMatchObject({ outcome: "pods-lost", podsLeft: 0 });
 	});
 
 	it("let players go once they have been away too long, closing the room when nobody came back", () => {

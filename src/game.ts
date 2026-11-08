@@ -87,6 +87,8 @@ export class Game {
 	private frozen = false;
 	/** Followed by the camera once your ship is gone in an online level */
 	private watching: Ship | null = null;
+	/** Single player: until your destroyed ship flies again (s, of the level's time) */
+	private respawnIn: number | null = null;
 	/** This player's id, online */
 	private me: number | null = null;
 	/** Who destroyed whom, and until when (s) that is on screen */
@@ -242,6 +244,7 @@ export class Game {
 		this.watching = null;
 		this.notice = null;
 		this.backAt = null;
+		this.respawnIn = null;
 		this.session = null;
 		this.camera.follow(null);
 		this.sounds.listener = null;
@@ -269,10 +272,8 @@ export class Game {
 		this.sounds.listener = session.ship;
 		this.hud.ship = session.ship;
 		this.hud.status = () => this.status();
-		if (session.online?.arena) {
-			this.hud.lines = () => this.matchScores();
-			this.hud.notices = () => this.matchNotices();
-		}
+		this.hud.notices = () => this.matchNotices();
+		if (session.online?.arena) { this.hud.lines = () => this.matchScores(); }
 	}
 
 	private status(): string {
@@ -317,7 +318,8 @@ export class Game {
 		const lines = (this.notice && now < this.notice.until ? [this.notice.text] : []);
 		if (session?.ship.dead && !session.outcome) {
 			this.backAt ??= now + RESPAWN_DELAY;
-			lines.push(`Back in ${Math.max(1, Math.ceil(this.backAt - now))} s`);
+			const left = (session.local ? this.respawnIn ?? RESPAWN_DELAY : this.backAt - now);
+			lines.push(`Back in ${Math.max(1, Math.ceil(left))} s`);
 		} else {
 			this.backAt = null;
 		}
@@ -341,14 +343,38 @@ export class Game {
 		if (session.outcome) { return; }
 
 		const { enemies, pods } = session.local!;
+		if (session.ship.dead) { this.comeBack(session.ship); }
 		const podsLeft = pods.filter(pod => !pod.dead).length;
-		const outcome = levelOutcome({ shipDead: session.ship.dead, podsLeft, enemiesLeft: enemies.remaining });
+		const outcome = levelOutcome({ podsLeft, enemiesLeft: enemies.remaining });
 		if (outcome) { this.finish(session, outcome, podsLeft, pods.length, enemies.destroyed); }
 	}
 
-	/** Once your ship is gone, the camera follows a teammate still flying; in a deathmatch it stays until you fly again */
+	/** Single player: a destroyed ship flies again RESPAWN_DELAY later, where the level started */
+	private comeBack(ship: PlayerShip): void {
+		this.respawnIn = (this.respawnIn ?? RESPAWN_DELAY) - this.loop.step;
+		if (this.respawnIn > 0) { return; }
+		this.respawnIn = null;
+		ship.revive();
+		vec3.zero(ship.position);
+		vec3.zero(ship.velocity);
+		quat.identity(ship.orientation);
+		ship.targetLock?.clear();
+		this.pilot.reset();
+		this.loop.spawn(ship);
+	}
+
+	/** Once your ship is gone, the camera follows a teammate still flying, until yours flies again; in a deathmatch it stays */
 	private spectate(online: OnlineSession): void {
-		if (online.arena || !online.ship.dead || (this.watching && !this.watching.dead)) { return; }
+		if (online.arena) { return; }
+		if (!online.ship.dead) {
+			if (this.watching) {
+				this.watching = null;
+				this.camera.follow(online.ship);
+				this.sounds.listener = online.ship;
+			}
+			return;
+		}
+		if (this.watching && !this.watching.dead) { return; }
 		this.watching = online.teammates[0] ?? null;
 		if (!this.watching) { return; }
 		this.camera.follow(this.watching, SPECTATE_OFFSET);

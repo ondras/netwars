@@ -35,11 +35,10 @@ function shipAt(x: number, y: number, z: number): Ship {
 const count = (loop: Loop, type: Function) => loop.scene.filter(entity => entity instanceof type).length;
 
 describe("levels", () => {
-	it("are lost when the ship is destroyed or all pods are gone, won when no enemies are left", () => {
-		expect(levelOutcome({ shipDead: false, podsLeft: 3, enemiesLeft: 2 })).toBeNull();
-		expect(levelOutcome({ shipDead: true, podsLeft: 3, enemiesLeft: 0 })).toBe("ship-destroyed");
-		expect(levelOutcome({ shipDead: false, podsLeft: 0, enemiesLeft: 0 })).toBe("pods-lost");
-		expect(levelOutcome({ shipDead: false, podsLeft: 1, enemiesLeft: 0 })).toBe("won");
+	it("are lost when all pods are gone, won when no enemies are left: a destroyed ship comes back", () => {
+		expect(levelOutcome({ podsLeft: 3, enemiesLeft: 2 })).toBeNull();
+		expect(levelOutcome({ podsLeft: 0, enemiesLeft: 0 })).toBe("pods-lost");
+		expect(levelOutcome({ podsLeft: 1, enemiesLeft: 0 })).toBe("won");
 	});
 
 	it("add two enemies at once, powerups, then hunters", () => {

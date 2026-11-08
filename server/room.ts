@@ -479,13 +479,13 @@ export class Room {
 		};
 
 		const flyers = new Map<number, Flyer>();
-		this.members.forEach((member, i) => {
+		this.members.forEach(member => {
 			const pilot = (member.bot ? new BotPilot(member.bot, { coop: !deathmatch }) : new RemotePilot());
 			const ship = this.createShip(member.id, pilot);
 			if (deathmatch) {
 				this.placeInArena(ship, loop);
 			} else {
-				ship.position[0] = (i - (this.members.length - 1) / 2) * START_GAP;
+				this.placeAtStart(ship, member.id);
 			}
 			flyers.set(member.id, { member, ship, pilot, allowance: new Allowance(ship), shots: new Map(), respawn: null, shields: ship.shields.value });
 			loop.players.push(ship);
@@ -522,6 +522,13 @@ export class Room {
 		return { ...level, enemies, pods, match: null };
 	}
 
+	/** Co-op: by the pods, side by side with the others, facing the way the level starts */
+	private placeAtStart(ship: PlayerShip, memberId: number): void {
+		const i = Math.max(0, this.members.findIndex(({ id }) => id == memberId));
+		vec3.set(ship.position, (i - (this.members.length - 1) / 2) * START_GAP, 0, 0);
+		quat.identity(ship.orientation);
+	}
+
 	/** Deathmatch: somewhere in the cube, level, far from the other ships */
 	private placeInArena(ship: PlayerShip, loop: Loop): void {
 		const others = loop.players.filter(other => other != ship && !other.dead);
@@ -544,7 +551,11 @@ export class Room {
 		const { loop } = level;
 		const ship = this.createShip(flyer.member.id, flyer.pilot);
 		loop.players[loop.players.indexOf(flyer.ship)] = ship;
-		this.placeInArena(ship, loop);
+		if (level.match) {
+			this.placeInArena(ship, loop);
+		} else {
+			this.placeAtStart(ship, flyer.member.id);
+		}
 		flyer.pilot.reset();
 		flyer.allowance.restart(ship);
 		this.log({ k: "spawn", t: this.time, by: flyer.member.id });
@@ -694,19 +705,18 @@ export class Room {
 		return (entity.lastHitBy ? this.pilots.get(entity.lastHitBy) ?? null : null);
 	}
 
-	/** Deathmatch: a frag for whoever hit the ship last, and its pilot flies again soon. Co-op: it is only recorded */
+	/** Its pilot flies again soon; in a deathmatch, a frag for whoever hit the ship last */
 	private onShipDestroyed(ship: PlayerShip): void {
 		const level = this.level;
 		if (!level || level.outcome) { return; }
 		const victim = this.pilots.get(ship)!;
+		const flyer = level.flyers.get(victim);
+		if (flyer) { flyer.respawn = RESPAWN_DELAY; }
 		const match = level.match;
 		if (!match) {
 			this.log({ k: "kill", t: this.time, by: null, on: victim });
 			return;
 		}
-
-		const flyer = level.flyers.get(victim);
-		if (flyer) { flyer.respawn = RESPAWN_DELAY; }
 
 		const killer = (ship.lastHitBy ? this.pilots.get(ship.lastHitBy) : undefined);
 		const counts = (killer !== undefined && killer != victim && level.flyers.has(killer));
@@ -745,13 +755,13 @@ export class Room {
 		let matchResult: MatchResult | undefined;
 		let ended = false;
 		if (!level.outcome) {
+			this.bringBack(level);
 			if (level.match) {
 				matchResult = this.runMatch(level, level.match);
 				if (matchResult) { level.outcome = "match-over"; }
 			} else {
 				const podsLeft = level.pods.filter(pod => !pod.dead).length;
-				const allDown = level.loop.players.every(ship => ship.dead);
-				level.outcome = levelOutcome({ shipDead: allDown, podsLeft, enemiesLeft: level.enemies!.remaining });
+				level.outcome = levelOutcome({ podsLeft, enemiesLeft: level.enemies!.remaining });
 			}
 			ended = level.outcome !== null;
 		}
@@ -779,16 +789,18 @@ export class Room {
 		}
 	}
 
-	/** One step of a deathmatch: ships come back, the clock runs. @returns How it ended, if it did */
-	private runMatch(level: Level, match: Match): MatchResult | undefined {
-		const { step } = level.loop;
+	/** Destroyed ships fly again once their time is up */
+	private bringBack(level: Level): void {
 		for (const flyer of level.flyers.values()) {
 			if (flyer.respawn === null) { continue; }
-			flyer.respawn -= step;
+			flyer.respawn -= level.loop.step;
 			if (flyer.respawn <= 0) { this.respawn(level, flyer); }
 		}
+	}
 
-		match.timeLeft -= step;
+	/** One step of a deathmatch: the clock runs. @returns How it ended, if it did */
+	private runMatch(level: Level, match: Match): MatchResult | undefined {
+		match.timeLeft -= level.loop.step;
 		const limitReached = Math.max(0, ...match.frags.values()) >= match.fragLimit;
 		if (!limitReached && match.timeLeft > 0) { return undefined; }
 

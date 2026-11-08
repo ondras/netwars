@@ -20,8 +20,8 @@ export interface LevelConfig {
 }
 
 /**
- * A level is won when all its enemies are destroyed or gone with at least one pod left,
- * and lost when the player's ship is destroyed or no pods are left.
+ * A level is won when all its enemies are destroyed or gone with at least one pod left, and lost when no pods are left.
+ * A destroyed ship flies again after a moment (RESPAWN_DELAY).
  */
 export const LEVELS: readonly LevelConfig[] = [
 	{
@@ -84,11 +84,10 @@ export const LEVELS: readonly LevelConfig[] = [
 ];
 
 /** "match-over": a deathmatch reached its frag or time limit */
-export type Outcome = "won" | "ship-destroyed" | "pods-lost" | "match-over";
+export type Outcome = "won" | "pods-lost" | "match-over";
 
 /** @returns null while the level goes on */
-export function levelOutcome(state: { shipDead: boolean; podsLeft: number; enemiesLeft: number }): Outcome | null {
-	if (state.shipDead) { return "ship-destroyed"; }
+export function levelOutcome(state: { podsLeft: number; enemiesLeft: number }): Outcome | null {
 	if (state.podsLeft == 0) { return "pods-lost"; }
 	if (state.enemiesLeft == 0) { return "won"; }
 	return null;
