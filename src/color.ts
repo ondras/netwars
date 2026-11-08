@@ -16,6 +16,12 @@ export class Color {
 		}
 	}
 
+	/** How bright it looks, 0..1 */
+	get luminance(): number {
+		const [r, g, b] = this.rgb;
+		return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+	}
+
 	toString(): string {
 		const [r, g, b] = this.rgb;
 		return `rgb(${Math.round(255 * r)},${Math.round(255 * g)},${Math.round(255 * b)})`;

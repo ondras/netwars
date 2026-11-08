@@ -19,7 +19,7 @@ interface Program<A extends string, U extends string> {
 	uniforms: Record<U, WebGLUniformLocation | null>;
 }
 
-type SimpleProgram = Program<"aPosition" | "aColor", "uPmatrix" | "uMVmatrix" | "uOffset" | "uFade">;
+type SimpleProgram = Program<"aPosition" | "aColor" | "aUnder", "uPmatrix" | "uMVmatrix" | "uOffset" | "uFade" | "uOutline">;
 type BillboardProgram = Program<"aPosition" | "aRadius", "uPmatrix" | "uMVmatrix" | "uTexture" | "uViewport" | "uFade">;
 type StarProgram = Program<"aPosition" | "aBrightness", "uPmatrix" | "uVmatrix" | "uSize">;
 type DustProgram = Program<"aPosition", "uPmatrix" | "uVmatrix" | "uCamera" | "uSpan" | "uSize" | "uBrightness">;
@@ -27,6 +27,18 @@ type AnyProgram = SimpleProgram | BillboardProgram | StarProgram | DustProgram;
 
 /** Width of lines (edges, sticks, grapples) in CSS pixels; picked on the ship designs page */
 const LINE_WIDTH = 0.75;
+
+/**
+ * Outlines show in full on a shape at least OUTLINE_FULL big on screen (its radius, CSS pixels), and turn the colour
+ * of what they outline as it shrinks to OUTLINE_GONE: they stay as wide, and would leave a far ship nothing but outline.
+ */
+const OUTLINE_FULL = 24;
+const OUTLINE_GONE = 8;
+
+/** How much the outlines of a shape this big on screen (radius, CSS pixels) show, 0..1 */
+export function outlineShows(radius: number): number {
+	return Math.max(0, Math.min(1, (radius - OUTLINE_GONE) / (OUTLINE_FULL - OUTLINE_GONE)));
+}
 
 /**
  * Screen shifts (device pixels) that, drawn over one another, turn 1 px lines into lines about `width` px wide:
@@ -63,6 +75,8 @@ interface Stars {
 interface ColoredSet {
 	points: WebGLBuffer;
 	colors: WebGLBuffer;
+	/** What the outlines among them turn on a shape small on screen; none when there are no outlines */
+	under?: WebGLBuffer;
 	/** Number of primitives (lines or triangles) */
 	count: number;
 }
@@ -100,6 +114,8 @@ export class WebGLRenderer implements Renderer {
 	private readonly dustPoints: WebGLBuffer;
 	/** Line passes in clip units, for the current canvas size and pixel ratio */
 	private lineShifts: Array<[number, number]> = [[0, 0]];
+	/** How big on screen (CSS pixels) a metre is a metre away, for the current canvas size */
+	private pixelsPerRadian = 1;
 
 	constructor(camera: Camera, background = new Color(0)) {
 		this.camera = camera;
@@ -109,7 +125,11 @@ export class WebGLRenderer implements Renderer {
 		this.gl = gl;
 
 		this.programs = {
-			simple: this.createProgram(simpleVert, simpleFrag, ["aPosition", "aColor"], ["uPmatrix", "uMVmatrix", "uOffset", "uFade"]),
+			simple: this.createProgram(
+				simpleVert, simpleFrag,
+				["aPosition", "aColor", "aUnder"],
+				["uPmatrix", "uMVmatrix", "uOffset", "uFade", "uOutline"],
+			),
 			billboard: this.createProgram(
 				billboardVert, billboardFrag,
 				["aPosition", "aRadius"],
@@ -138,6 +158,7 @@ export class WebGLRenderer implements Renderer {
 			this.camera.syncPort(node);
 			const width = LINE_WIDTH * (window.devicePixelRatio || 1);
 			this.lineShifts = lineOffsets(width).map(([x, y]) => [2 * x / node.width, 2 * y / node.height]);
+			this.pixelsPerRadian = this.camera.pMatrix[5] * node.height / 2 / (window.devicePixelRatio || 1);
 		}
 		this.camera.update();
 		for (const program of Object.values(this.programs)) { this.staleProjection.add(program); }
@@ -178,13 +199,17 @@ export class WebGLRenderer implements Renderer {
 		}
 
 		/* in a deathmatch everything is kept at its copy nearest this ship, which is the only one within sight */
-		const fade = (this.limitedSight ? senseFade(vec3.distance(entity.position, this.camera.position), SIGHT_REACH) : 1);
+		const distance = vec3.distance(entity.position, this.camera.position);
+		const fade = (this.limitedSight ? senseFade(distance, SIGHT_REACH) : 1);
 		if (fade <= 0) { return; }
 
 		const { gl } = this;
 		const mvMatrix = mat4.multiply(mat4.create(), this.camera.vMatrix, entity.getModelMatrix()) as Float32Array;
 
-		if (data.lines) { this.drawColored(data.lines, gl.LINES, 2, mvMatrix, fade); }
+		if (data.lines) {
+			const outline = (data.lines.under && distance > 0 ? outlineShows(entity.radius / distance * this.pixelsPerRadian) : 1);
+			this.drawColored(data.lines, gl.LINES, 2, mvMatrix, fade, outline);
+		}
 		if (data.triangles) { this.drawColored(data.triangles, gl.TRIANGLES, 3, mvMatrix, fade); }
 
 		if (data.billboards) {
@@ -274,8 +299,11 @@ export class WebGLRenderer implements Renderer {
 		return { points: this.buffer(points), brightness: this.buffer(brightness), count: STAR_COUNT };
 	}
 
-	/** @param fade How much of it shows, 0..1: farther away, it darkens into the black of space */
-	private drawColored(set: ColoredSet, mode: GLenum, verticesPerPrimitive: number, mvMatrix: Float32Array, fade: number): void {
+	/**
+	 * @param fade How much of it shows, 0..1: farther away, it darkens into the black of space
+	 * @param outline How much the outlines among it show, 0..1
+	 */
+	private drawColored(set: ColoredSet, mode: GLenum, verticesPerPrimitive: number, mvMatrix: Float32Array, fade: number, outline = 1): void {
 		const { gl } = this;
 		const program = this.programs.simple;
 		this.useProgram(program);
@@ -283,12 +311,16 @@ export class WebGLRenderer implements Renderer {
 
 		gl.uniformMatrix4fv(u.uMVmatrix, false, mvMatrix);
 		gl.uniform1f(u.uFade, fade);
+		gl.uniform1f(u.uOutline, outline);
 
 		gl.bindBuffer(gl.ARRAY_BUFFER, set.points);
 		gl.vertexAttribPointer(a.aPosition, 3, gl.FLOAT, false, 0, 0);
 
 		gl.bindBuffer(gl.ARRAY_BUFFER, set.colors);
 		gl.vertexAttribPointer(a.aColor, 3, gl.FLOAT, false, 0, 0);
+
+		gl.bindBuffer(gl.ARRAY_BUFFER, set.under ?? set.colors);
+		gl.vertexAttribPointer(a.aUnder, 3, gl.FLOAT, false, 0, 0);
 
 		if (mode == gl.LINES) {
 			for (const [x, y] of this.lineShifts) {
@@ -305,7 +337,7 @@ export class WebGLRenderer implements Renderer {
 
 	/** Upload entity geometries; quads are split into triangles */
 	private createEntityData(entity: Entity): EntityData {
-		const lines = { points: [] as number[], colors: [] as number[], count: 0 };
+		const lines = { points: [] as number[], colors: [] as number[], under: [] as number[], outlines: false, count: 0 };
 		const triangles = { points: [] as number[], colors: [] as number[], count: 0 };
 		const billboards = { points: [] as number[], radiuses: [] as number[], textures: [] as Texture[] };
 
@@ -318,6 +350,11 @@ export class WebGLRenderer implements Renderer {
 					for (const point of geometry.points) {
 						set.points.push(...point);
 						set.colors.push(...geometry.color.rgb);
+					}
+					if (geometry.type == "line") {
+						const under = (geometry.under ?? geometry.color).rgb;
+						lines.under.push(...under, ...under);
+						lines.outlines ||= Boolean(geometry.under);
 					}
 				} break;
 
@@ -340,6 +377,7 @@ export class WebGLRenderer implements Renderer {
 		const data: EntityData = {};
 		if (lines.count) {
 			data.lines = { points: this.buffer(lines.points), colors: this.buffer(lines.colors), count: lines.count };
+			if (lines.outlines) { data.lines.under = this.buffer(lines.under); }
 		}
 		if (triangles.count) {
 			data.triangles = { points: this.buffer(triangles.points), colors: this.buffer(triangles.colors), count: triangles.count };

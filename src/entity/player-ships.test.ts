@@ -35,6 +35,21 @@ describe("player ships", () => {
 		expect(a.map(g => (g.type == "billboard" ? "" : g.color.toString()))).not.toEqual(b.map(g => (g.type == "billboard" ? "" : g.color.toString())));
 	});
 
+	it("have dark outlines that take the paint of what they outline far away, and bright ones that stay as they are", () => {
+		for (const look of allLooks) {
+			const { ship, skin } = lookParts(look);
+			const { body, wing, edges } = PLAYER_SHIPS[ship].skins[skin].style;
+			for (const geometry of shipGeometries(look)) {
+				if (geometry.type != "line" || !geometry.under) { continue; }
+				expect([body, wing].map(String), lookName(look)).toContain(String(geometry.under));
+				expect(geometry.under.luminance, lookName(look)).toBeGreaterThan(edges!.luminance);
+			}
+		}
+		const outlined = (look: number) => shipGeometries(look).some(g => g.type == "line" && g.under);
+		expect(outlined(lookOf(4, 0))).toBe(true); /* Vesper · Hornet: near-black edges on yellow */
+		expect(outlined(lookOf(11, 1))).toBe(false); /* Stinger · Night: cyan edges on dark grey */
+	});
+
 	it("tell a look from anything else, and read an unknown one as the default", () => {
 		expect(isLook(0)).toBe(true);
 		expect(isLook(35)).toBe(true);

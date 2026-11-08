@@ -115,8 +115,11 @@ export function buildShip(pieces: readonly Piece[], radius: number, style: ShipS
 		geometries.push(triangle(toVec(corners[0]), toVec(corners[1]), toVec(corners[2]), color));
 		return normal;
 	};
-	const addEdge = (from: Point, to: Point) => {
-		if (style.edges) { geometries.push(line(toVec(from), toVec(to), style.edges)); }
+	/* far away an edge takes the paint of its part, where that shows better: bright edges on dark paint stay as they are */
+	const addEdge = (from: Point, to: Point, role: Role) => {
+		if (!style.edges) { return; }
+		const paint = (role == "wing" ? style.wing : style.body);
+		geometries.push(line(toVec(from), toVec(to), style.edges, (paint.luminance > style.edges.luminance ? paint : undefined)));
 	};
 
 	for (const piece of pieces) {
@@ -131,7 +134,7 @@ export function buildShip(pieces: readonly Piece[], radius: number, style: ShipS
 				addFace([points[0], points[i], points[i + 1]], piece.role);
 				addFace([points[0], points[i + 1], points[i]], piece.role); /* the other side */
 			}
-			points.forEach((point, i) => addEdge(point, points[(i + 1) % points.length]));
+			points.forEach((point, i) => addEdge(point, points[(i + 1) % points.length], piece.role));
 			continue;
 		}
 
@@ -148,7 +151,7 @@ export function buildShip(pieces: readonly Piece[], radius: number, style: ShipS
 		for (const [key, normals] of creases) {
 			if (normals.length == 2 && dot(normals[0], normals[1]) > CREASE) { continue; } /* a diagonal across a flat face */
 			const [u, v] = key.split(",").map(Number);
-			addEdge(points[u], points[v]);
+			addEdge(points[u], points[v], piece.role);
 		}
 	}
 

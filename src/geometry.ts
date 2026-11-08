@@ -7,6 +7,11 @@ export interface Line {
 	readonly type: "line";
 	points: [vec3, vec3];
 	color: Color;
+	/**
+	 * An outline's: the colour of what it outlines. Lines keep their width however far away the shape is,
+	 * so on a shape a few pixels big they take this colour, not to paint it over with theirs.
+	 */
+	under?: Color;
 }
 
 export interface Triangle {
@@ -33,8 +38,8 @@ export interface Billboard {
 export type Geometry = Line | Triangle | Quad | Billboard;
 export type GeometryType = Geometry["type"];
 
-export function line(p1: vec3, p2: vec3, color: Color): Line {
-	return { type: "line", points: [p1, p2], color };
+export function line(p1: vec3, p2: vec3, color: Color, under?: Color): Line {
+	return { type: "line", points: [p1, p2], color, ...(under ? { under } : {}) };
 }
 
 export function triangle(p1: vec3, p2: vec3, p3: vec3, color: Color): Triangle {
