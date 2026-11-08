@@ -71,7 +71,7 @@ export function helpMarkup(): string {
 		<p>Enemies destroyed, plus pods and shields left when you win. ×${DIFFICULTY_FACTOR.easy} on ${easy.label}, ×${DIFFICULTY_FACTOR.hard} on ${hard.label}.</p>
 
 		<h3>Your ship</h3>
-		<p>Pick a ship and its colours on the title screen, or in a room's lobby. All ships fly the same and are the same size to hit. You fly from the cockpit, so you never see your own: the other pilots do.</p>
+		<p>Pick a ship and its colours in a room's lobby. All ships fly the same and are the same size to hit. You fly from the cockpit, so you never see your own: the other pilots do.</p>
 		<h3>Deathmatch</h3>
 		<p>Online, every pilot for themselves in a cube with no walls, of ${ARENA_SIZES.join(", ")} m as the host picks: fly out of one side and you come back in on the other. You can see ${SIGHT_REACH} m; the radar reaches ${RADAR_REACH} m, and you hear only what is on it. Destroy a ship for a frag; you fly again ${RESPAWN_DELAY} s after being destroyed. Rockets lock onto other pilots, and can be shot down. The match ends at the frag limit or the time limit, whichever comes first. The host can add bots in the lobby; a person joining takes the place of a bot if the room is full.</p>
 	`;

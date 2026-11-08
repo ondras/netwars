@@ -1,5 +1,4 @@
 import { difficultyLevel } from "./difficulty.ts";
-import { lookName } from "./entity/player-ships.ts";
 import { Game, type LevelResult } from "./game.ts";
 import { Hangar } from "./hangar.ts";
 import { LEVELS } from "./levels.ts";
@@ -47,13 +46,7 @@ function resume(): void {
 
 hangar.onChange = look => {
 	setShipLook(look);
-	menu.showShip(lookName(look));
 	send({ type: "look", look });
-};
-menu.showShip(lookName(shipLook()));
-menu.onShip = () => {
-	menu.hideAll();
-	hangar.open(shipLook(), () => menu.showTitle());
 };
 online.onShip = () => {
 	online.hide();
