@@ -58,6 +58,11 @@ function arenaPowerups(size: number): { interval: number; max: number } {
 	return { interval: 12 / volume, max: Math.round(4 * volume) };
 }
 
+/** A player's ship, or a rocket one launched: what is on the players' side */
+const isFriendly = (target: Entity): boolean => target instanceof PlayerShip || (target instanceof Missile && target.owner instanceof PlayerShip);
+/** Co-op: a player's shot passes through teammates and their rockets */
+const spareTeammates = (shot: Shot, target: Entity): boolean => shot.owner instanceof PlayerShip && isFriendly(target);
+
 /** Flies a player's ship between reports with the controls last reported; the ship does not fire (browsers do) */
 class RemotePilot implements Pilot {
 	target = 0;
@@ -294,7 +299,6 @@ export class Room {
 	/** Host, between levels */
 	setup(memberId: number, { mode, level, difficulty, fragLimit, timeLimit }: RoomSetup): void {
 		if (memberId != this.host || this.state == "playing") { return; }
-		if (mode != "deathmatch") { this.removeBots(); }
 		this.mode = mode;
 		this.levelIndex = level;
 		this.difficulty = difficulty;
@@ -304,11 +308,11 @@ export class Room {
 	}
 
 	/**
-	 * Host, between levels: a bot joins the fight, for a deathmatch only
+	 * Host, between levels: a bot joins, to fight the others in a deathmatch or alongside them in co-op
 	 * @param id A member id nobody else has
 	 */
 	addBot(memberId: number, id: number, traits: BotTraits = botTraits()): void {
-		if (memberId != this.host || this.state == "playing" || this.mode != "deathmatch" || this.members.length >= MAX_PLAYERS) { return; }
+		if (memberId != this.host || this.state == "playing" || this.members.length >= MAX_PLAYERS) { return; }
 		const taken = new Set(this.members.map(({ name }) => name));
 		const name = BOT_NAMES.find(candidate => !taken.has(candidate)) ?? "Bot";
 		/* an empty token cannot be resumed; what it is sent goes nowhere */
@@ -323,12 +327,6 @@ export class Room {
 		if (index < 0) { return; }
 		this.members.splice(index, 1);
 		this.broadcastRoom();
-	}
-
-	private removeBots(): void {
-		for (let i = this.members.length - 1; i >= 0; i--) {
-			if (this.members[i].bot) { this.members.splice(i, 1); }
-		}
 	}
 
 	/** Host: start a level (the one set up when not given) */
@@ -469,7 +467,7 @@ export class Room {
 		if (deathmatch) { loop.size = arenaSizeFor(this.members.length); }
 		/* players' ships are moved by their browsers, which also handle their bumps */
 		loop.rules = (scene, world) => {
-			resolveHits(scene, world);
+			resolveHits(scene, world, (deathmatch ? undefined : spareTeammates));
 			if (deathmatch) {
 				resolveCollisions(scene, world, ship => !(ship instanceof PlayerShip) || this.flownHere.has(ship)); /* bots bump into the ships of people, who stay put here */
 			} else {
@@ -479,7 +477,7 @@ export class Room {
 
 		const flyers = new Map<number, Flyer>();
 		this.members.forEach((member, i) => {
-			const pilot = (member.bot ? new BotPilot(member.bot) : new RemotePilot());
+			const pilot = (member.bot ? new BotPilot(member.bot, { coop: !deathmatch }) : new RemotePilot());
 			const ship = this.createShip(member.id, pilot);
 			if (deathmatch) {
 				this.placeInArena(ship, loop);
@@ -615,7 +613,7 @@ export class Room {
 		const target = this.byId.get(hit.id);
 		if (!target || target.dead) { return; } /* gone just now: someone else got there first */
 
-		const friendly = (target instanceof PlayerShip || (target instanceof Missile && target.owner instanceof PlayerShip));
+		const friendly = isFriendly(target);
 		const at = (hit.t >= this.time - REWIND_LIMIT && hit.t <= this.time ? level.history.positionAt(hit.id, hit.t) : null);
 		if (!shot || !at || !target.hittable || target == flyer.ship || (level.match === null && friendly)
 			|| (target instanceof Missile && target.owner == flyer.ship)

@@ -41,8 +41,9 @@ export function segmentHitsSphere(a: ReadonlyVec3, b: ReadonlyVec3, center: Read
  * Test the path each shot travelled during the last step against bounding spheres of hittable entities;
  * the sphere entered first along the path is hit. A hit removes the shot;
  * ships lose shields and explode when depleted, anything else explodes at once.
+ * @param spares What a shot passes through: in co-op, players' shots and their teammates
  */
-export function resolveHits(entities: readonly Entity[], world: World): void {
+export function resolveHits(entities: readonly Entity[], world: World, spares: (shot: Shot, target: Entity) => boolean = () => false): void {
 	for (const shot of entities) {
 		if (!(shot instanceof Shot) || shot.dead) { continue; }
 
@@ -54,6 +55,7 @@ export function resolveHits(entities: readonly Entity[], world: World): void {
 			if (shot.target && target != shot.target) { continue; }
 			if (shot.hitOnly && !shot.hitOnly.includes(target)) { continue; }
 			if (target instanceof Shot && target.owner == shot.owner) { continue; } /* never your own rockets */
+			if (spares(shot, target)) { continue; }
 
 			const center = world.nearest(target.position, shot.position);
 			const t = segmentSphereEntry(shot.previousPosition, shot.position, center, target.radius + shot.radius);

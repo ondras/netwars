@@ -1,14 +1,17 @@
 import { quat, vec3 } from "gl-matrix";
 import { beforeAll, describe, expect, it } from "vitest";
-import { botTraits, noticeChance } from "../src/bot.ts";
+import { botTraits, noticeChance, POD_CLEARANCE } from "../src/bot.ts";
 import { SENSE_FADE, SIGHT_REACH } from "../src/senses.ts";
 import { Missile } from "../src/entity/missile.ts";
+import { Pirate } from "../src/entity/pirate.ts";
 import type { PlayerShip } from "../src/entity/player-ship.ts";
+import { Pod } from "../src/entity/pod.ts";
 import { Powerup } from "../src/entity/powerup.ts";
+import { EnemySpawner } from "../src/entity/spawner.ts";
 import { angleOffNose } from "../src/lock.ts";
 import type { Loop } from "../src/loop.ts";
 import { MAX_PLAYERS, type ServerMessage, type Snapshot } from "../src/net/protocol.ts";
-import { stubModels } from "../src/testing.ts";
+import { settle, stubModels } from "../src/testing.ts";
 import { analyze, report } from "./analyze.ts";
 import { fight, tournament } from "./arena.ts";
 import type { Allowance } from "./checks.ts";
@@ -62,17 +65,15 @@ describe("bots in a room", () => {
 		expect(room.members).toHaveLength(2);
 	});
 
-	it("are not there in co-op: not added, and gone when the host switches to it", () => {
+	it("join co-op too, and stay when the host switches between the modes", () => {
 		const host = member(1);
 		const room = new Room("ABCD", host, 0, "normal");
 		room.addBot(host.id, 10);
-		expect(room.members).toHaveLength(1);
+		expect(room.members).toHaveLength(2);
 
 		room.setup(host.id, { mode: "deathmatch", level: 0, difficulty: "normal", fragLimit: 3, timeLimit: 5 });
-		room.addBot(host.id, 10);
-		expect(room.members).toHaveLength(2);
 		room.setup(host.id, { mode: "coop", level: 0, difficulty: "normal", fragLimit: 3, timeLimit: 5 });
-		expect(room.members).toHaveLength(1);
+		expect(room.members).toHaveLength(2);
 	});
 
 	it("make way for a person when the room is full, and fill it no further", () => {
@@ -360,6 +361,69 @@ describe("how bots fly", () => {
 		const pulls = held.filter((down, i) => down && !held[i - 1]).length;
 		expect(pulls).toBeGreaterThan(0);
 		expect(held.filter(Boolean).length / pulls).toBeGreaterThan(5); /* at least a quarter of a second each */
+	});
+});
+
+describe("bots in co-op", () => {
+	/** A co-op level of a person and a bot, the bot 200 m off the pods, facing -Z, the enemies not sent in yet */
+	async function defending(): Promise<{ room: Room; loop: Loop; bot: PlayerShip; person: PlayerShip }> {
+		const host = member(1);
+		const room = new Room("ABCD", host, 0, "normal");
+		room.addBot(host.id, 10);
+		room.start(host.id);
+		await settle();
+		const loop = loopOf(room);
+		loop.scene.splice(loop.scene.findIndex(entity => entity instanceof EnemySpawner), 1);
+		const bot = shipOf(room, 10);
+		vec3.set(bot.position, 200, 0, 0);
+		quat.identity(bot.orientation);
+		return { room, loop, bot, person: shipOf(room, host.id) };
+	}
+
+	function pirateAt(loop: Loop, x: number, y: number, z: number): Pirate {
+		const pirate = new Pirate(loop.players);
+		vec3.set(pirate.position, x, y, z);
+		loop.spawn(pirate);
+		return pirate;
+	}
+
+	it("fight the enemies, their shots passing through a teammate in the way", async () => {
+		const { room, loop, person } = await defending();
+		vec3.set(person.position, 200, 0, -20);
+		const pirate = pirateAt(loop, 200, 0, -60);
+		run(room, 3); /* a pirate fires its first missile 4 s in at the soonest */
+		expect(pirate.shields.value < pirate.shields.max || pirate.dead).toBe(true);
+		expect(person.shields.value).toBe(person.shields.max);
+	});
+
+	it("hold their fire with a pod in the line of fire", async () => {
+		const { room, loop, bot } = await defending();
+		const pod = loop.scene.find((entity): entity is Pod => entity instanceof Pod)!;
+		vec3.set(pod.position, 200, 0, -40);
+		pirateAt(loop, 200, 0, -80);
+		/* how far the pod is off the line of fire (m) */
+		const offLine = () => {
+			const nose = vec3.transformQuat(vec3.create(), vec3.fromValues(0, 0, -1), bot.orientation);
+			const to = vec3.subtract(vec3.create(), pod.position, bot.position);
+			return Math.sqrt(vec3.squaredLength(to) - vec3.dot(to, nose) ** 2);
+		};
+		let heldWithPodInLine = false;
+		for (let t = 0; t < 3; t += 0.05) {
+			room.advance(0.05);
+			if (bot.trigger) { expect(offLine()).toBeGreaterThan(POD_CLEARANCE); }
+			heldWithPodInLine ||= (!bot.trigger && offLine() < POD_CLEARANCE);
+		}
+		expect(heldWithPodInLine).toBe(true);
+		expect(pod.dead).toBe(false);
+	});
+
+	it("keep near the pods while no enemy is about", async () => {
+		const { room, loop, bot } = await defending();
+		run(room, 20);
+		const pods = loop.scene.filter((entity): entity is Pod => entity instanceof Pod);
+		const center = vec3.create();
+		for (const pod of pods) { vec3.scaleAndAdd(center, center, pod.position, 1 / pods.length); }
+		expect(vec3.distance(bot.position, center)).toBeLessThan(90);
 	});
 });
 

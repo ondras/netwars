@@ -1,5 +1,8 @@
 import { quat, vec3, type ReadonlyVec3 } from "gl-matrix";
 import type { Entity } from "./entity/entity.ts";
+import { Pirate } from "./entity/pirate.ts";
+import { PlayerShip } from "./entity/player-ship.ts";
+import { Pod } from "./entity/pod.ts";
 import { Powerup } from "./entity/powerup.ts";
 import { ROCKET_CAPACITY, Ship } from "./entity/ship.ts";
 import { angleOffNose, TargetLock } from "./lock.ts";
@@ -126,6 +129,17 @@ const PURSUIT_TIME = 5;
 /** With nothing on its radar: how long it keeps to one heading (s), and how far ahead it means to go (m) */
 const SEARCH_TIME = 10;
 const SEARCH_AHEAD = 300;
+/**
+ * Co-op: it goes after what threatens the pods first. A pod thief counts as this share of how far it is,
+ * one carrying a pod off as the second.
+ */
+const THIEF_WEIGHT = 0.6;
+const CARRIER_WEIGHT = 0.3;
+/** Co-op: an enemy a teammate is closer to counts as this many times as far: the teammate will see to it */
+const TEAMMATE_WEIGHT = 2.5;
+/** Co-op, with no enemy about: it heads for points this far around the middle of the pods (m), a new one this often (s) */
+const PATROL_RADIUS = 40;
+const PATROL_TIME = 8;
 /** It starts firing somewhere between this share of fireRange and all of it, differently every fight */
 const FIRE_NEAREST = 0.7;
 /** The shortest a burst lasts, and the pause before the next (s) */
@@ -135,8 +149,11 @@ const BURST_REST = 0.4;
 const ROCKET_REST = 2;
 /** The stick stays where it is unless it should be this much elsewhere: a hand rests */
 const HAND_REST = 0.004;
-/** Muzzle speed of the gun it has, the same as anyone's */
+/** Muzzle speed of the gun it has, the same as anyone's, and how far its shots go (m) */
 const SHOT_SPEED = new Weapon().options.muzzleSpeed;
+const GUN_REACH = SHOT_SPEED * new Weapon().options.lifetime;
+/** Co-op: it does not fire with a pod this close to its line of fire (m, besides the pod's size), ahead within the gun's reach */
+export const POD_CLEARANCE = 3;
 
 interface Seen {
 	readonly time: number;
@@ -155,13 +172,21 @@ function wants({ kind }: Powerup, ship: Ship): boolean {
 	}
 }
 
+export interface BotOptions {
+	/** Fights the enemies alongside the players, rather than the players */
+	readonly coop?: boolean;
+	readonly random?: () => number;
+}
+
 /**
  * Flies a ship like a person might: collects powerups until another ship comes close, then fights it,
  * nose on it and gun blazing, with rockets when it gets a lock, and veers off only rather than ram it.
- * It knows only what its radar shows; with nothing there, it goes looking.
+ * In a deathmatch it knows only what its radar shows; with nothing there, it goes looking.
+ * In co-op it knows of every enemy, as the radar shows them all, goes after pod thieves first and otherwise keeps near the pods.
  */
 export class BotPilot implements Pilot {
 	private readonly traits: BotTraits;
+	private readonly coop: boolean;
 	private readonly random: () => number;
 	private time = 0;
 	private target: Ship | null = null;
@@ -192,8 +217,9 @@ export class BotPilot implements Pilot {
 	/** Phases of its aim's wandering */
 	private readonly phases: readonly number[];
 
-	constructor(traits: BotTraits, random: () => number = Math.random) {
+	constructor(traits: BotTraits, { coop = false, random = Math.random }: BotOptions = {}) {
 		this.traits = traits;
+		this.coop = coop;
 		this.random = random;
 		this.phases = [0, 1, 2, 3].map(() => random() * 2 * Math.PI);
 	}
@@ -253,6 +279,10 @@ export class BotPilot implements Pilot {
 		}
 
 		if (!this.noticed) { this.burstLeft = 0; } /* what it does not see it does not shoot at, not even to finish a burst */
+		if (this.coop && (fire || this.burstLeft > 0) && this.podInLine(ship, world)) { /* not through the pods it defends */
+			fire = false;
+			this.burstLeft = 0;
+		}
 		this.pullTrigger(dt, ship, fire);
 		this.launchRockets(dt, ship);
 	}
@@ -297,7 +327,9 @@ export class BotPilot implements Pilot {
 	/** Where to, with nothing on its radar: where a ship it was after went, for a while; otherwise on, turning now and then */
 	private search(dt: number, ship: Ship, world: World): vec3 {
 		this.headLeft -= dt;
-		if (this.headLeft <= 0) {
+		if (this.headLeft <= 0 && this.coop) {
+			this.patrol(world);
+		} else if (this.headLeft <= 0) {
 			this.pursuing = false;
 			/* a new heading, more ahead than behind: one looking around sweeps on rather than turn back */
 			const z = 2 * this.random() - 1;
@@ -311,6 +343,16 @@ export class BotPilot implements Pilot {
 			this.headLeft = SEARCH_TIME;
 		}
 		return vec3.clone(world.nearest(this.headFor, ship.position));
+	}
+
+	/** Co-op, with no enemy about: somewhere around the pods still there, to be close when the next thief comes */
+	private patrol(world: World): void {
+		const pods = world.scene.filter((entity): entity is Pod => entity instanceof Pod && !entity.dead && !entity.carrier);
+		const center = vec3.create();
+		for (const pod of pods) { vec3.scaleAndAdd(center, center, pod.position, 1 / pods.length); }
+		const around = 2 * Math.PI * this.random();
+		vec3.add(this.headFor, center, vec3.fromValues(PATROL_RADIUS * Math.cos(around), (this.random() - 0.5) * 20, PATROL_RADIUS * Math.sin(around)));
+		this.headLeft = PATROL_TIME;
 	}
 
 	/** Like a person on the keys: the speed asked for goes up and down in steps of one, as fast as its hand does that */
@@ -352,8 +394,11 @@ export class BotPilot implements Pilot {
 		const stale = (!this.target || this.target.dead || this.sinceLook >= RETARGET_TIME);
 		if (stale) {
 			this.sinceLook = 0;
-			const onRadar = (entity: Entity) => vec3.distance(ship.position, world.nearest(entity.position, ship.position)) <= RADAR_REACH;
-			const nearest = this.nearest(ship, world, world.players.filter(other => other != ship && !other.dead && onRadar(other)));
+			/* in co-op the radar shows every contact, those beyond its range at its edge */
+			const onRadar = (entity: Entity) => this.coop || vec3.distance(ship.position, world.nearest(entity.position, ship.position)) <= RADAR_REACH;
+			const nearest = (this.coop
+				? this.mostUrgent(ship, world)
+				: this.nearest(ship, world, world.players.filter(other => other != ship && !other.dead && onRadar(other))));
 			if (!nearest && this.target && !this.target.dead) { this.pursue(ship, world); }
 			if (nearest != this.target) {
 				this.seen.length = 0;
@@ -368,7 +413,7 @@ export class BotPilot implements Pilot {
 
 		const { target, seen } = this;
 		if (!target) { return; }
-		if (vec3.distance(ship.position, world.nearest(target.position, ship.position)) > RADAR_REACH) {
+		if (!this.coop && vec3.distance(ship.position, world.nearest(target.position, ship.position)) > RADAR_REACH) {
 			/* off its radar now: all it knows is where it last saw it going */
 			this.pursue(ship, world);
 			this.target = null;
@@ -387,6 +432,39 @@ export class BotPilot implements Pilot {
 		vec3.scaleAndAdd(this.headFor, this.headFor, last.velocity, PURSUIT_TIME);
 		this.headLeft = PURSUIT_TIME;
 		this.pursuing = true;
+	}
+
+	/** Co-op: a pod where a shot fired now could go, missing or not; the one its target carries is worth the risk */
+	private podInLine(ship: Ship, world: World): boolean {
+		const nose = vec3.transformQuat(vec3.create(), vec3.fromValues(0, 0, -1), ship.orientation);
+		const cargo = (this.target instanceof Pirate ? this.target.cargo : null);
+		for (const entity of world.scene) {
+			if (!(entity instanceof Pod) || entity.dead || entity == cargo) { continue; }
+			const to = vec3.subtract(vec3.create(), entity.position, ship.position);
+			const along = vec3.dot(to, nose);
+			if (along <= 0 || along > GUN_REACH) { continue; }
+			if (Math.sqrt(Math.max(0, vec3.squaredLength(to) - along * along)) < POD_CLEARANCE + entity.radius) { return true; }
+		}
+		return false;
+	}
+
+	/** Co-op: the enemy to fight first, by how far it is, whether it is after the pods and whether a teammate is closer to it */
+	private mostUrgent(ship: Ship, world: World): Ship | null {
+		const teammates = world.players.filter(other => other != ship && !other.dead);
+		let best: Ship | null = null;
+		let bestScore = Infinity;
+		for (const entity of world.scene) {
+			if (!(entity instanceof Ship) || entity instanceof PlayerShip || entity.dead) { continue; }
+			const distance = vec3.distance(ship.position, entity.position);
+			const theirs = teammates.some(other => vec3.distance(other.position, entity.position) < distance);
+			const weight = (entity instanceof Pirate ? (entity.cargo ? CARRIER_WEIGHT : THIEF_WEIGHT) : 1) * (theirs ? TEAMMATE_WEIGHT : 1);
+			const score = distance * weight;
+			if (score < bestScore) {
+				best = entity;
+				bestScore = score;
+			}
+		}
+		return best;
 	}
 
 	private nearest<T extends Ship | Powerup>(ship: Ship, world: World, candidates: readonly T[]): T | null {
@@ -471,7 +549,7 @@ export class BotPilot implements Pilot {
 
 	/** With a target locked and rockets left, it launches a moment later, then waits to see what the rocket does */
 	private launchRockets(dt: number, ship: Ship): void {
-		ship.targetLock ??= new TargetLock(entity => entity instanceof Ship && entity != ship);
+		ship.targetLock ??= new TargetLock(entity => entity instanceof Ship && entity != ship && !(this.coop && entity instanceof PlayerShip));
 		this.rocketRest = Math.max(0, this.rocketRest - dt);
 		this.lockedFor = (ship.targetLock.locked ? this.lockedFor + dt : 0);
 		if (this.lockedFor >= this.traits.rocketDelay && this.rocketRest <= 0 && ship.rockets > 0) {

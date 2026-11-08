@@ -73,6 +73,8 @@ export function helpMarkup(): string {
 		<h3>Your ship</h3>
 		<p>Pick a ship and its colours in a room's lobby. All ships fly the same and are the same size to hit. You fly from the cockpit, so you never see your own: the other pilots do.</p>
 		<h3>Deathmatch</h3>
-		<p>Online, every pilot for themselves in a cube with no walls, ${arenaSizeFor(2)} m across for two pilots, ${arenaSizeFor(3)} m for three, ${arenaSizeFor(4)} m for four: fly out of one side and you come back in on the other. You can see ${SIGHT_REACH} m; the radar reaches ${RADAR_REACH} m, and you hear only what is on it. Destroy a ship for a frag; you fly again ${RESPAWN_DELAY} s after being destroyed. Rockets lock onto other pilots, and can be shot down. The match ends at the frag limit or the time limit, whichever comes first. The host can add bots in the lobby; a person joining takes the place of a bot if the room is full.</p>
+		<p>Online, every pilot for themselves in a cube with no walls, ${arenaSizeFor(2)} m across for two pilots, ${arenaSizeFor(3)} m for three, ${arenaSizeFor(4)} m for four: fly out of one side and you come back in on the other. You can see ${SIGHT_REACH} m; the radar reaches ${RADAR_REACH} m, and you hear only what is on it. Destroy a ship for a frag; you fly again ${RESPAWN_DELAY} s after being destroyed. Rockets lock onto other pilots, and can be shot down. The match ends at the frag limit or the time limit, whichever comes first.</p>
+		<h3>Bots</h3>
+		<p>Online, the host can add bots in the lobby: in co-op they fight alongside you, in a deathmatch against everyone. A person joining takes the place of a bot if the room is full.</p>
 	`;
 }

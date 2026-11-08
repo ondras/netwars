@@ -42,6 +42,18 @@ describe("resolveHits", () => {
 		expect(back.dead).toBe(false);
 		expect(shot.dead).toBe(true);
 	});
+
+	it("lets a shot pass through what it is to spare, on to what is behind", () => {
+		const teammate = target(-10);
+		const enemy = target(-15);
+		const shot = new Shot(v(0, 0, -20), v(0, 0, -100), null, 1, 25);
+		vec3.set(shot.previousPosition, 0, 0, 0);
+
+		resolveHits([shot, teammate, enemy], new Loop(), (_, hit) => hit == teammate);
+
+		expect(teammate.dead).toBe(false);
+		expect(enemy.dead).toBe(true);
+	});
 });
 
 describe("segmentHitsSphere", () => {

@@ -88,6 +88,11 @@ export function loadNSH(name: string): Promise<Geometry[]> {
 	return promise;
 }
 
+/** Settles once every model asked for so far has loaded, or failed to: entities then have their shapes */
+export async function modelsLoaded(): Promise<void> {
+	await Promise.allSettled(cache.values());
+}
+
 export function createNSH(data: string): Geometry[] {
 	const parsed = parseNSH(data);
 
