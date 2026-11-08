@@ -41,7 +41,6 @@ export class Hangar {
 	constructor() {
 		this.shipButtons = PLAYER_SHIPS.map((design, ship) => {
 			const button = this.pickButton(lookOf(ship, 0), design.name);
-			button.setAttribute("aria-label", `${design.name}, inspired by: ${design.kind}`);
 			button.onclick = () => {
 				const { skin } = lookParts(this.look);
 				this.pick(lookOf(ship, skin));
@@ -112,7 +111,7 @@ export class Hangar {
 		const { ship, skin } = lookParts(look);
 		const design = PLAYER_SHIPS[ship];
 
-		element<HTMLElement>("hangar-name").textContent = `${lookName(look)} (${design.kind.toLowerCase()})`;
+		element<HTMLElement>("hangar-name").textContent = lookName(look);
 		this.view.setAttribute("aria-label", lookName(look));
 		this.shipButtons.forEach((button, i) => button.setAttribute("aria-pressed", String(i == ship)));
 
