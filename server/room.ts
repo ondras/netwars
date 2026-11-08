@@ -17,7 +17,7 @@ import { ENEMY_KINDS, LEVELS, levelOutcome, POD_FIELD, type EnemyKind, type Outc
 import { Loop } from "../src/loop.ts";
 import { extraOf, kindIndex, kindOf } from "../src/net/kinds.ts";
 import {
-	ARENA_SIZE, DEFAULT_FRAG_LIMIT, DEFAULT_TIME_LIMIT, MAX_PLAYERS, RECONNECT_GRACE, RESPAWN_DELAY, round, SNAPSHOT_STEPS,
+	DEFAULT_ARENA_SIZE, DEFAULT_FRAG_LIMIT, DEFAULT_TIME_LIMIT, MAX_PLAYERS, RECONNECT_GRACE, RESPAWN_DELAY, round, SNAPSHOT_STEPS,
 	type ClientMessage, type EntityRecord, type GameEvent, type GameMode, type HitReport, type MatchResult, type OutcomeMessage, type Quat,
 	type RocketReport, type RoomInfo, type RoomSetup, type RoomState, type ServerMessage, type ShipState, type ShotReport, type StartMessage,
 } from "../src/net/protocol.ts";
@@ -53,7 +53,11 @@ const START_GAP = 8;
 /** Deathmatch: places tried for a ship to start from, the one farthest from the others is taken */
 const SPAWN_TRIES = 12;
 /** Deathmatch: powerups are around for whoever gets there first */
-const ARENA_POWERUPS = { interval: 12, max: 4 };
+/** Deathmatch: powerups in a cube of a side of size (m): as many to the cubic metre as in the smallest one, coming as often */
+function arenaPowerups(size: number): { interval: number; max: number } {
+	const volume = (size / DEFAULT_ARENA_SIZE) ** 3;
+	return { interval: 12 / volume, max: Math.round(4 * volume) };
+}
 
 /** Flies a player's ship between reports with the controls last reported; the ship does not fire (browsers do) */
 class RemotePilot implements Pilot {
@@ -148,6 +152,7 @@ export class Room {
 	mode: GameMode = "coop";
 	fragLimit: number = DEFAULT_FRAG_LIMIT;
 	timeLimit: number = DEFAULT_TIME_LIMIT;
+	arenaSize: number = DEFAULT_ARENA_SIZE;
 	state: RoomState = "lobby";
 	/** Reports not believed so far: nothing happens to whoever sent them, but it shows when the limits are too tight */
 	readonly refused = { moves: 0, shots: 0, rockets: 0, hits: 0 };
@@ -188,6 +193,7 @@ export class Room {
 			difficulty: this.difficulty,
 			fragLimit: this.fragLimit,
 			timeLimit: this.timeLimit,
+			arenaSize: this.arenaSize,
 			state: this.state,
 		};
 	}
@@ -284,7 +290,7 @@ export class Room {
 	}
 
 	/** Host, between levels */
-	setup(memberId: number, { mode, level, difficulty, fragLimit, timeLimit }: RoomSetup): void {
+	setup(memberId: number, { mode, level, difficulty, fragLimit, timeLimit, arenaSize }: RoomSetup): void {
 		if (memberId != this.host || this.state == "playing") { return; }
 		if (mode != "deathmatch") { this.removeBots(); }
 		this.mode = mode;
@@ -292,6 +298,7 @@ export class Room {
 		this.difficulty = difficulty;
 		this.fragLimit = fragLimit;
 		this.timeLimit = timeLimit;
+		this.arenaSize = arenaSize;
 		this.broadcastRoom();
 	}
 
@@ -402,7 +409,7 @@ export class Room {
 			rockets: ship.rockets,
 			alive: !ship.dead,
 			podsTotal: level.pods.length,
-			arena: (level.match ? { size: ARENA_SIZE, fragLimit: level.match.fragLimit } : null),
+			arena: (level.match ? { size: level.loop.size!, fragLimit: level.match.fragLimit } : null),
 		};
 	}
 
@@ -439,7 +446,7 @@ export class Room {
 		const loop = new Loop();
 		loop.debris = false; /* nobody watches here */
 		loop.difficulty = DIFFICULTIES[this.difficulty];
-		if (deathmatch) { loop.size = ARENA_SIZE; }
+		if (deathmatch) { loop.size = this.arenaSize; }
 		/* players' ships are moved by their browsers, which also handle their bumps */
 		loop.rules = (scene, world) => {
 			resolveHits(scene, world);
@@ -476,7 +483,7 @@ export class Room {
 		const level = { run, index, difficulty: this.difficulty, loop, flyers, steps: 0, outcome: null, result: null, history: new ViewHistory(), log };
 
 		if (deathmatch) {
-			loop.scene.push(...loop.players, new PowerupSpawner(loop.players, ARENA_POWERUPS));
+			loop.scene.push(...loop.players, new PowerupSpawner(loop.players, arenaPowerups(this.arenaSize)));
 			const frags = new Map(this.members.map(({ id }) => [id, 0]));
 			return { ...level, enemies: null, pods: [], match: { fragLimit: this.fragLimit, timeLeft: this.timeLimit * 60, frags } };
 		}
@@ -495,10 +502,11 @@ export class Room {
 	/** Deathmatch: somewhere in the cube, level, far from the other ships */
 	private placeInArena(ship: PlayerShip, loop: Loop): void {
 		const others = loop.players.filter(other => other != ship && !other.dead);
+		const size = loop.size!;
 		const candidate = vec3.create();
 		let farthest = -1;
 		for (let i = 0; i < SPAWN_TRIES; i++) {
-			vec3.set(candidate, (Math.random() - 0.5) * ARENA_SIZE, (Math.random() - 0.5) * ARENA_SIZE, (Math.random() - 0.5) * ARENA_SIZE);
+			vec3.set(candidate, (Math.random() - 0.5) * size, (Math.random() - 0.5) * size, (Math.random() - 0.5) * size);
 			const gap = Math.min(Infinity, ...others.map(other => vec3.distance(candidate, loop.nearest(other.position, candidate))));
 			if (gap > farthest) {
 				farthest = gap;

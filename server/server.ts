@@ -8,7 +8,7 @@ import { isDifficultyLevel } from "../src/difficulty.ts";
 import { DEFAULT_LOOK, isLook } from "../src/entity/player-ships.ts";
 import { LEVELS } from "../src/levels.ts";
 import {
-	CLOSE_REPLACED, FRAG_LIMITS, GAME_MODES, HEARTBEAT, NET_PATH, SILENCE_LIMIT, TIME_LIMITS,
+	ARENA_SIZES, CLOSE_REPLACED, FRAG_LIMITS, GAME_MODES, HEARTBEAT, NET_PATH, SILENCE_LIMIT, TIME_LIMITS,
 	type ClientMessage, type GameMode, type RoomSetup, type ServerMessage,
 } from "../src/net/protocol.ts";
 import { setModelSource } from "../src/nsh.ts";
@@ -223,9 +223,10 @@ function connect(socket: WebSocket, rooms: Rooms): void {
 }
 
 const validLevel = (level: unknown): level is number => Number.isInteger(level) && Boolean(LEVELS[level as number]);
-const validSetup = ({ mode, level, difficulty, fragLimit, timeLimit }: RoomSetup): boolean => (GAME_MODES.includes(mode as GameMode)
+const validSetup = ({ mode, level, difficulty, fragLimit, timeLimit, arenaSize }: RoomSetup): boolean => (GAME_MODES.includes(mode as GameMode)
 	&& validLevel(level) && isDifficultyLevel(String(difficulty))
-	&& (FRAG_LIMITS as readonly number[]).includes(fragLimit) && (TIME_LIMITS as readonly number[]).includes(timeLimit));
+	&& (FRAG_LIMITS as readonly number[]).includes(fragLimit) && (TIME_LIMITS as readonly number[]).includes(timeLimit)
+	&& (ARENA_SIZES as readonly number[]).includes(arenaSize));
 
 const MESSAGE_TYPES = new Set<ClientMessage["type"]>(["create", "join", "name", "look", "setup", "addBot", "removeBot", "start", "lobby", "state", "leave", "resume"]);
 

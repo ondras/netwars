@@ -24,7 +24,7 @@ function member(id: number): TestMember {
 function deathmatch(logs: ConstructorParameters<typeof Room>[4] = null): { room: Room; host: TestMember } {
 	const host = member(1);
 	const room = new Room("ABCD", host, 0, "normal", logs);
-	room.setup(host.id, { mode: "deathmatch", level: 0, difficulty: "normal", fragLimit: 3, timeLimit: 5 });
+	room.setup(host.id, { mode: "deathmatch", level: 0, difficulty: "normal", fragLimit: 3, timeLimit: 5, arenaSize: 400 });
 	return { room, host };
 }
 
@@ -62,10 +62,10 @@ describe("bots in a room", () => {
 		room.addBot(host.id, 10);
 		expect(room.members).toHaveLength(1);
 
-		room.setup(host.id, { mode: "deathmatch", level: 0, difficulty: "normal", fragLimit: 3, timeLimit: 5 });
+		room.setup(host.id, { mode: "deathmatch", level: 0, difficulty: "normal", fragLimit: 3, timeLimit: 5, arenaSize: 400 });
 		room.addBot(host.id, 10);
 		expect(room.members).toHaveLength(2);
-		room.setup(host.id, { mode: "coop", level: 0, difficulty: "normal", fragLimit: 3, timeLimit: 5 });
+		room.setup(host.id, { mode: "coop", level: 0, difficulty: "normal", fragLimit: 3, timeLimit: 5, arenaSize: 400 });
 		expect(room.members).toHaveLength(1);
 	});
 
@@ -169,13 +169,13 @@ describe("bots in a room", () => {
 
 describe("the arena", () => {
 	it("runs a whole match of bots: they find each other and score", () => {
-		const { frags, outcome } = fight([botTraits(), botTraits()], { fragLimit: 3, timeLimit: 5 });
+		const { frags, outcome } = fight([botTraits(), botTraits()], { fragLimit: 3, timeLimit: 5, arenaSize: 400 });
 		expect(outcome.outcome).toBe("match-over");
 		expect(frags[0] + frags[1]).toBeGreaterThan(0);
 	});
 
 	it("gives better aim more frags, all else being equal", () => {
-		const { frags } = tournament([botTraits(1, 0.5), botTraits(0, 0.5)], 6, { fragLimit: 10, timeLimit: 3 });
+		const { frags } = tournament([botTraits(1, 0.5), botTraits(0, 0.5)], 6, { fragLimit: 10, timeLimit: 3, arenaSize: 400 });
 		expect(frags[0]).toBeGreaterThan(frags[1]);
 	});
 });

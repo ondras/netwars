@@ -16,6 +16,8 @@ export interface ArenaOptions {
 	fragLimit?: number;
 	/** Minutes */
 	timeLimit?: number;
+	/** Side of the cube (m) */
+	arenaSize?: number;
 	/** Gets every line of the recording */
 	logs?: MatchLogs;
 }
@@ -24,7 +26,7 @@ export interface ArenaOptions {
 const SLICE = 0.05;
 
 /** One match. @returns How it ended, with the frags of each bot in the order given */
-export function fight(bots: readonly BotTraits[], { fragLimit = 10, timeLimit = 5, logs }: ArenaOptions = {}): { outcome: OutcomeMessage; frags: number[] } {
+export function fight(bots: readonly BotTraits[], { fragLimit = 10, timeLimit = 5, arenaSize = 400, logs }: ArenaOptions = {}): { outcome: OutcomeMessage; frags: number[] } {
 	let outcome: OutcomeMessage | null = null;
 	const member = (id: number, traits: BotTraits): Member => ({
 		id, name: `Bot ${id}`, token: "", look: 0, bot: traits,
@@ -32,7 +34,7 @@ export function fight(bots: readonly BotTraits[], { fragLimit = 10, timeLimit = 
 	});
 
 	const room = new Room("ARNA", member(1, bots[0]), 0, "normal", logs ?? null);
-	room.setup(1, { mode: "deathmatch", level: 0, difficulty: "normal", fragLimit, timeLimit });
+	room.setup(1, { mode: "deathmatch", level: 0, difficulty: "normal", fragLimit, timeLimit, arenaSize });
 	bots.slice(1).forEach((traits, i) => room.members.push(member(i + 2, traits)));
 	room.start(1);
 	for (let t = 0; !outcome && t < timeLimit * 60 + 1; t += SLICE) { room.advance(SLICE); }
