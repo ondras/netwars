@@ -3,6 +3,7 @@ import type { Camera } from "../camera.ts";
 import type { Entity } from "../entity/entity.ts";
 import { POWERUPS } from "../entity/powerup.ts";
 import { ROCKET_CAPACITY, type Ship } from "../entity/ship.ts";
+import { RADAR_REACH } from "../senses.ts";
 import { RadarScope } from "./radar-scope.ts";
 import { syncCanvasSize, type Renderer } from "./renderer.ts";
 
@@ -46,9 +47,12 @@ export class HUD implements Renderer {
 	lines: (() => readonly string[]) | null = null;
 	/** Lines in the middle of the view, upper part (who destroyed whom) */
 	notices: (() => readonly string[]) | null = null;
+	/** In a deathmatch: the radar reaches only RADAR_REACH, and its grid is as wide */
+	limitedRadar = false;
 
 	private readonly ctx = this.node.getContext("2d")!;
 	private readonly radar = new RadarScope(RADAR_RANGE);
+	private readonly arenaRadar = new RadarScope(RADAR_REACH);
 	private readonly camera: Camera;
 	private readonly viewProjection = mat4.create();
 	/** Canvas size in CSS pixels */
@@ -96,7 +100,8 @@ export class HUD implements Renderer {
 		this.drawShields(ship, METER_LEFT + METER_SPACING, height - METER_BOTTOM);
 		this.drawRockets(ship, METER_LEFT + 2 * METER_SPACING, height - METER_BOTTOM);
 		this.drawEffects(ship, METER_LEFT, height - METER_BOTTOM - METER_HEIGHT - 16);
-		this.radar.draw(ctx, ship, entities, width - RADAR_WIDTH - 16, height - RADAR_HEIGHT - 16, RADAR_WIDTH, RADAR_HEIGHT);
+		const radar = (this.limitedRadar ? this.arenaRadar : this.radar);
+		radar.draw(ctx, ship, entities, width - RADAR_WIDTH - 16, height - RADAR_HEIGHT - 16, RADAR_WIDTH, RADAR_HEIGHT, this.limitedRadar);
 	}
 
 	/** Canvas position (CSS px) of a point in the scene, or null when it is behind the camera */

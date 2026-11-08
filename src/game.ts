@@ -197,6 +197,7 @@ export class Game {
 		this.sounds.unlock();
 		this.me = me;
 		this.loop.size = start.arena?.size ?? null;
+		this.scene.limitedSight = this.hud.limitedRadar = this.sounds.limitedHearing = start.arena !== null;
 		this.scene.dust = start.arena !== null;
 		const ship = this.createShip(start.arena ? isOpponent : isRocketTarget);
 		vec3.set(ship.position, ...start.spawn);
@@ -230,6 +231,7 @@ export class Game {
 		this.loop.paused = false;
 		this.loop.rules = DEFAULT_RULES;
 		this.loop.size = null;
+		this.scene.limitedSight = this.hud.limitedRadar = this.sounds.limitedHearing = false;
 		this.scene.dust = false;
 		this.held = false;
 		this.watching = null;

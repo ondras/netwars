@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { Entity } from "../entity/entity.ts";
 import { Powerup, POWERUPS, type PowerupKind } from "../entity/powerup.ts";
 import { Ship } from "../entity/ship.ts";
+import { ARENA_SIZES } from "../net/protocol.ts";
+import { RADAR_REACH, SENSE_FADE } from "../senses.ts";
 import { RadarScope } from "./radar-scope.ts";
 
 const RANGE = 150;
@@ -14,16 +16,21 @@ interface Call {
 
 /** Draws the radar on a stand-in that writes down what it is told to do */
 function draw(...entities: Entity[]): Call[] {
+	return drawIn(false, ...entities);
+}
+
+function drawIn(reach: boolean, ...entities: Entity[]): Call[] {
 	const calls: Call[] = [];
 	const state: Record<string | symbol, unknown> = {};
 	const ctx = new Proxy(state, {
 		get: (_, name) => (name in state ? state[name] : (...args: unknown[]) => { calls.push({ name: String(name), args }); }),
 		set: (_, name, value) => {
 			state[name] = value;
+			if (name == "globalAlpha") { calls.push({ name: "alpha", args: [value] }); }
 			return true;
 		},
 	}) as unknown as CanvasRenderingContext2D;
-	new RadarScope(RANGE).draw(ctx, new Entity(), entities, 0, 0, 260, 160);
+	new RadarScope(RANGE).draw(ctx, new Entity(), entities, 0, 0, 260, 160, reach);
 	return calls;
 }
 
@@ -85,4 +92,36 @@ describe("radar", () => {
 		expect(look(draw(at(new Ship(), 0, 30, -60))).hollow).toBe(false);
 	});
 
+	describe("with a reach, as in a deathmatch", () => {
+		/** Each dot drawn, and how much of it shows */
+		function dots(...entities: Entity[]): number[] {
+			let alpha = 1;
+			const found: number[] = [];
+			for (const { name, args } of drawIn(true, ...entities)) {
+				if (name == "alpha") { alpha = args[0] as number; }
+				if (name == "arc") { found.push(alpha); }
+			}
+			return found;
+		}
+
+		it("shows what is near in full, fades what is nearly out of reach, and leaves out the rest", () => {
+			expect(dots(at(new Ship(), 0, 0, -100))).toEqual([1]);
+			expect(dots(at(new Ship(), 0, 0, -(RADAR_REACH - SENSE_FADE / 2)))[0]).toBeCloseTo(0.5);
+			expect(dots(at(new Ship(), 0, 120, -(RADAR_REACH - 10)))).toEqual([]); /* farther than that, all told */
+			expect(dots(at(new Ship(), 0, 0, -(RADAR_REACH + 1)))).toEqual([]);
+			expect(drawIn(true, powerup("boost", 0, 0, -250)).some(({ args }) => args[0] == POWERUPS.boost.letter)).toBe(false);
+		});
+
+		it("still shows a contact beyond the grid's range, within reach, as a hollow dot", () => {
+			expect(look(drawIn(true, at(new Ship(), 0, 0, -(RANGE + 10)))).hollow).toBe(true);
+		});
+
+		it("leaves the radar without a reach as it was", () => {
+			expect(drawIn(false, at(new Ship(), 0, 0, -300)).filter(({ name }) => name == "arc")).toHaveLength(1);
+		});
+
+		it("reaches less than half the smallest arena: a contact changes sides only out of reach", () => {
+			expect(RADAR_REACH).toBeLessThan(Math.min(...ARENA_SIZES) / 2);
+		});
+	});
 });

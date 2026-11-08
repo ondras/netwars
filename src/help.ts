@@ -4,6 +4,7 @@ import {
 } from "./entity/powerup.ts";
 import { gunshipShape, hunterShape, pirateShape, raiderShape } from "./entity/shapes.ts";
 import { ARENA_SIZES, RESPAWN_DELAY } from "./net/protocol.ts";
+import { RADAR_REACH, SIGHT_REACH } from "./senses.ts";
 import { GUNSHIP_COLOR, HUNTER_COLOR, POD_COLOR, POWERUP_COLOR, RAIDER_COLOR, SHIP_COLOR } from "./render/radar-scope.ts";
 import { shipIcon } from "./render/ship-icon.ts";
 import { DIFFICULTY_FACTOR } from "./scores.ts";
@@ -72,6 +73,6 @@ export function helpMarkup(): string {
 		<h3>Your ship</h3>
 		<p>Pick a ship and its colours on the title screen, or in a room's lobby. All ships fly the same and are the same size to hit. You fly from the cockpit, so you never see your own: the other pilots do.</p>
 		<h3>Deathmatch</h3>
-		<p>Online, every pilot for themselves in a cube with no walls, of ${ARENA_SIZES.join(", ")} m as the host picks: fly out of one side and you come back in on the other. Destroy a ship for a frag; you fly again ${RESPAWN_DELAY} s after being destroyed. Rockets lock onto other pilots, and can be shot down. The match ends at the frag limit or the time limit, whichever comes first. The host can add bots in the lobby; a person joining takes the place of a bot if the room is full.</p>
+		<p>Online, every pilot for themselves in a cube with no walls, of ${ARENA_SIZES.join(", ")} m as the host picks: fly out of one side and you come back in on the other. You can see ${SIGHT_REACH} m; the radar reaches ${RADAR_REACH} m, and you hear only what is on it. Destroy a ship for a frag; you fly again ${RESPAWN_DELAY} s after being destroyed. Rockets lock onto other pilots, and can be shot down. The match ends at the frag limit or the time limit, whichever comes first. The host can add bots in the lobby; a person joining takes the place of a bot if the room is full.</p>
 	`;
 }

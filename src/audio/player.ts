@@ -1,4 +1,5 @@
 import { quat, vec3, type ReadonlyQuat, type ReadonlyVec3 } from "gl-matrix";
+import { HEARING_REACH, senseFade } from "../senses.ts";
 import { SOUNDS, type SoundName } from "./sounds.ts";
 import { renderSound, SAMPLE_RATE } from "./synth.ts";
 
@@ -22,8 +23,11 @@ export interface Placement {
 	pan: number;
 }
 
-/** How loud and from which side the listener hears a sound made at `at` (without `at`: at the listener) */
-export function placeSound(listener: Listener | null, at?: ReadonlyVec3): Placement {
+/**
+ * How loud and from which side the listener hears a sound made at `at` (without `at`: at the listener)
+ * @param limited In a deathmatch: nothing is heard from farther than HEARING_REACH, fading out before
+ */
+export function placeSound(listener: Listener | null, at?: ReadonlyVec3, limited = false): Placement {
 	if (!listener || !at) { return { gain: 1, pan: 0 }; }
 
 	const local = vec3.subtract(vec3.create(), at, listener.position);
@@ -31,7 +35,8 @@ export function placeSound(listener: Listener | null, at?: ReadonlyVec3): Placem
 	const distance = vec3.length(local);
 	if (distance < 1e-6) { return { gain: 1, pan: 0 }; }
 
-	return { gain: Math.min(1, NEAR / distance), pan: PAN_WIDTH * local[0] / distance }; /* local +X is right */
+	const reach = (limited ? senseFade(distance, HEARING_REACH) : 1);
+	return { gain: Math.min(1, NEAR / distance) * reach, pan: PAN_WIDTH * local[0] / distance }; /* local +X is right */
 }
 
 interface Output {
@@ -45,6 +50,8 @@ interface Output {
 export class SoundPlayer {
 	/** Sounds are heard from here */
 	listener: Listener | null = null;
+	/** In a deathmatch: nothing is heard from farther than HEARING_REACH */
+	limitedHearing = false;
 
 	private readonly samples = new Map<SoundName, Float32Array<ArrayBuffer>[]>();
 	private output: Output | null = null;
@@ -93,7 +100,7 @@ export class SoundPlayer {
 		const output = this.output;
 		if (!output || output.context.state != "running") { return; }
 
-		const { gain, pan } = placeSound(this.listener, at);
+		const { gain, pan } = placeSound(this.listener, at, this.limitedHearing);
 		if (gain < MIN_GAIN) { return; }
 
 		const { context } = output;

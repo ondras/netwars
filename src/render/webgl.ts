@@ -3,6 +3,7 @@ import type { Camera } from "../camera.ts";
 import { Color } from "../color.ts";
 import type { Entity } from "../entity/entity.ts";
 import type { Texture } from "../geometry.ts";
+import { SIGHT_REACH, senseFade } from "../senses.ts";
 import { syncCanvasSize, type Renderer } from "./renderer.ts";
 import billboardFrag from "../shaders/billboard.frag?raw";
 import billboardVert from "../shaders/billboard.vert?raw";
@@ -18,8 +19,8 @@ interface Program<A extends string, U extends string> {
 	uniforms: Record<U, WebGLUniformLocation | null>;
 }
 
-type SimpleProgram = Program<"aPosition" | "aColor", "uPmatrix" | "uMVmatrix" | "uOffset">;
-type BillboardProgram = Program<"aPosition" | "aRadius", "uPmatrix" | "uMVmatrix" | "uTexture" | "uViewport">;
+type SimpleProgram = Program<"aPosition" | "aColor", "uPmatrix" | "uMVmatrix" | "uOffset" | "uFade">;
+type BillboardProgram = Program<"aPosition" | "aRadius", "uPmatrix" | "uMVmatrix" | "uTexture" | "uViewport" | "uFade">;
 type StarProgram = Program<"aPosition" | "aBrightness", "uPmatrix" | "uVmatrix" | "uSize">;
 type DustProgram = Program<"aPosition", "uPmatrix" | "uVmatrix" | "uCamera" | "uSpan" | "uSize" | "uBrightness">;
 type AnyProgram = SimpleProgram | BillboardProgram | StarProgram | DustProgram;
@@ -86,6 +87,8 @@ export class WebGLRenderer implements Renderer {
 	readonly node = document.createElement("canvas");
 	/** Grains drifting past show the ship's motion where nothing else around does */
 	dust = false;
+	/** In a deathmatch: nothing farther than SIGHT_REACH from the camera shows, fading out before */
+	limitedSight = false;
 	private readonly camera: Camera;
 	private readonly gl: WebGLRenderingContext;
 	private readonly programs: { simple: SimpleProgram; billboard: BillboardProgram; star: StarProgram; dust: DustProgram };
@@ -106,11 +109,11 @@ export class WebGLRenderer implements Renderer {
 		this.gl = gl;
 
 		this.programs = {
-			simple: this.createProgram(simpleVert, simpleFrag, ["aPosition", "aColor"], ["uPmatrix", "uMVmatrix", "uOffset"]),
+			simple: this.createProgram(simpleVert, simpleFrag, ["aPosition", "aColor"], ["uPmatrix", "uMVmatrix", "uOffset", "uFade"]),
 			billboard: this.createProgram(
 				billboardVert, billboardFrag,
 				["aPosition", "aRadius"],
-				["uPmatrix", "uMVmatrix", "uTexture", "uViewport"],
+				["uPmatrix", "uMVmatrix", "uTexture", "uViewport", "uFade"],
 			),
 			star: this.createProgram(starVert, starFrag, ["aPosition", "aBrightness"], ["uPmatrix", "uVmatrix", "uSize"]),
 			dust: this.createProgram(dustVert, starFrag, ["aPosition"], ["uPmatrix", "uVmatrix", "uCamera", "uSpan", "uSize", "uBrightness"]),
@@ -168,17 +171,21 @@ export class WebGLRenderer implements Renderer {
 	private renderEntity(entity: Entity): void {
 		if (!entity.visible || !entity.geometries.length) { return; }
 
-		const { gl } = this;
 		let data = this.entityData.get(entity);
 		if (!data) {
 			data = this.createEntityData(entity);
 			this.entityData.set(entity, data);
 		}
 
+		/* in a deathmatch everything is kept at its copy nearest this ship, which is the only one within sight */
+		const fade = (this.limitedSight ? senseFade(vec3.distance(entity.position, this.camera.position), SIGHT_REACH) : 1);
+		if (fade <= 0) { return; }
+
+		const { gl } = this;
 		const mvMatrix = mat4.multiply(mat4.create(), this.camera.vMatrix, entity.getModelMatrix()) as Float32Array;
 
-		if (data.lines) { this.drawColored(data.lines, gl.LINES, 2, mvMatrix); }
-		if (data.triangles) { this.drawColored(data.triangles, gl.TRIANGLES, 3, mvMatrix); }
+		if (data.lines) { this.drawColored(data.lines, gl.LINES, 2, mvMatrix, fade); }
+		if (data.triangles) { this.drawColored(data.triangles, gl.TRIANGLES, 3, mvMatrix, fade); }
 
 		if (data.billboards) {
 			const program = this.programs.billboard;
@@ -191,6 +198,7 @@ export class WebGLRenderer implements Renderer {
 			gl.uniform1i(u.uTexture, 0);
 
 			gl.uniform1f(u.uViewport, this.node.width);
+			gl.uniform1f(u.uFade, fade);
 
 			gl.bindBuffer(gl.ARRAY_BUFFER, data.billboards.points);
 			gl.vertexAttribPointer(a.aPosition, 3, gl.FLOAT, false, 0, 0);
@@ -266,13 +274,15 @@ export class WebGLRenderer implements Renderer {
 		return { points: this.buffer(points), brightness: this.buffer(brightness), count: STAR_COUNT };
 	}
 
-	private drawColored(set: ColoredSet, mode: GLenum, verticesPerPrimitive: number, mvMatrix: Float32Array): void {
+	/** @param fade How much of it shows, 0..1: farther away, it darkens into the black of space */
+	private drawColored(set: ColoredSet, mode: GLenum, verticesPerPrimitive: number, mvMatrix: Float32Array, fade: number): void {
 		const { gl } = this;
 		const program = this.programs.simple;
 		this.useProgram(program);
 		const { attributes: a, uniforms: u } = program;
 
 		gl.uniformMatrix4fv(u.uMVmatrix, false, mvMatrix);
+		gl.uniform1f(u.uFade, fade);
 
 		gl.bindBuffer(gl.ARRAY_BUFFER, set.points);
 		gl.vertexAttribPointer(a.aPosition, 3, gl.FLOAT, false, 0, 0);

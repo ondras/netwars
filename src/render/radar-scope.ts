@@ -8,6 +8,7 @@ import { Pod } from "../entity/pod.ts";
 import { Powerup, POWERUPS } from "../entity/powerup.ts";
 import { Ship } from "../entity/ship.ts";
 import { radarContact, type RadarContact } from "../radar.ts";
+import { RADAR_REACH, senseFade } from "../senses.ts";
 
 const GRID_COLOR = "rgba(255, 70, 60, 0.85)";
 export const POD_COLOR = "rgb(90, 150, 255)";
@@ -78,11 +79,14 @@ interface Plotted {
 	color: string;
 	/** What kind of powerup it is */
 	letter: string | null;
+	/** How much of it shows, 0..1 */
+	weight: number;
 }
 
 /**
  * Square grid in perspective. Contacts stand on stalks showing their height, or hang below the grid; a powerup has its letter
  * beside its dot. Those beyond its range are hollow dots at its edge, in the direction they are; their height shows just the same.
+ * With a reach (a deathmatch), what is farther does not show at all, fading out before.
  */
 export class RadarScope {
 	/** Half the side of the covered square (m) */
@@ -92,8 +96,11 @@ export class RadarScope {
 		this.range = range;
 	}
 
-	/** Draw into the given box (CSS pixels), observer at the grid center facing away from the viewer */
-	draw(ctx: CanvasRenderingContext2D, observer: Entity, entities: readonly Entity[], left: number, top: number, width: number, height: number): void {
+	/**
+	 * Draw into the given box (CSS pixels), observer at the grid center facing away from the viewer
+	 * @param reach Whether nothing farther than RADAR_REACH shows
+	 */
+	draw(ctx: CanvasRenderingContext2D, observer: Entity, entities: readonly Entity[], left: number, top: number, width: number, height: number, reach = false): void {
 		const scale = Math.min(width / (BOUNDS.maxX - BOUNDS.minX), height / (BOUNDS.maxY - BOUNDS.minY));
 		const originX = left + width / 2 - (BOUNDS.minX + BOUNDS.maxX) / 2 * scale;
 		const originY = top + height / 2 + (BOUNDS.minY + BOUNDS.maxY) / 2 * scale;
@@ -137,7 +144,8 @@ export class RadarScope {
 			if (!color) { continue; }
 
 			const letter = (entity instanceof Powerup ? POWERUPS[entity.kind].letter : null);
-			plotted.push({ contact: radarContact(observer, entity, this.range), color, letter });
+			const weight = (reach ? senseFade(vec3.distance(entity.position, observer.position), RADAR_REACH) : 1);
+			if (weight > 0) { plotted.push({ contact: radarContact(observer, entity, this.range), color, letter, weight }); }
 		}
 		plotted.sort((a, b) => b.contact.forward - a.contact.forward);
 
@@ -145,7 +153,8 @@ export class RadarScope {
 		ctx.textAlign = "left";
 		ctx.textBaseline = "middle";
 
-		for (const { contact, color, letter } of plotted) {
+		for (const { contact, color, letter, weight } of plotted) {
+			ctx.globalAlpha = weight;
 			const x = contact.x;
 			const z = -contact.forward;
 			const y = Math.max(-MAX_STALK, Math.min(MAX_STALK, contact.height));

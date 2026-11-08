@@ -1,6 +1,7 @@
 import { quat, vec3 } from "gl-matrix";
 import { beforeAll, describe, expect, it } from "vitest";
 import { placeSound } from "./audio/player.ts";
+import { HEARING_REACH, SENSE_FADE } from "./senses.ts";
 import { SOUNDS, type SoundName } from "./audio/sounds.ts";
 import { applyTremolo, peak, renderSound, renderSteps, SAMPLE_RATE } from "./audio/synth.ts";
 import { Color } from "./color.ts";
@@ -100,6 +101,16 @@ describe("placeSound", () => {
 		const left = placeSound(listener, vec3.fromValues(-80, 0, 0));
 		expect(left.gain).toBeCloseTo(0.25);
 		expect(left.pan).toBeCloseTo(-0.7);
+	});
+
+	it("in a deathmatch, fades out sounds from near the radar's reach and drops those beyond it", () => {
+		const ahead = (distance: number, limited: boolean) => placeSound(listener, vec3.fromValues(0, 0, -distance), limited).gain;
+		expect(ahead(100, true)).toBeCloseTo(ahead(100, false));
+		expect(ahead(HEARING_REACH - SENSE_FADE / 2, true)).toBeCloseTo(ahead(HEARING_REACH - SENSE_FADE / 2, false) / 2);
+		expect(ahead(HEARING_REACH, true)).toBe(0);
+		expect(ahead(300, true)).toBe(0);
+		expect(ahead(300, false)).toBeGreaterThan(0);
+		expect(placeSound(listener, undefined, true)).toEqual({ gain: 1, pan: 0 }); /* alerts are heard wherever */
 	});
 
 	it("follows the listener's heading", () => {
