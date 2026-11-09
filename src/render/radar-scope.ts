@@ -15,8 +15,8 @@ export const POD_COLOR = "rgb(90, 150, 255)";
 /** Pirates and other ships */
 export const SHIP_COLOR = "rgb(255, 220, 60)";
 export const HUNTER_COLOR = "rgb(255, 130, 40)";
-export const RAIDER_COLOR = "rgb(80, 235, 200)";
-export const GUNSHIP_COLOR = "rgb(200, 110, 255)";
+export const RAIDER_COLOR = "rgb(255, 95, 125)";
+export const GUNSHIP_COLOR = "rgb(138, 1, 223)";
 export const POWERUP_COLOR = "rgb(200, 200, 200)";
 /** Other pilots in online play: the HUD's green */
 export const TEAM_COLOR = "rgb(110, 255, 140)";
