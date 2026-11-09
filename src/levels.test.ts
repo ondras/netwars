@@ -4,7 +4,7 @@ import { Color } from "./color.ts";
 import { DIFFICULTIES } from "./difficulty.ts";
 import { explode } from "./entity/debris.ts";
 import { Entity } from "./entity/entity.ts";
-import { Hunter } from "./entity/hunter.ts";
+import { FIRE_RANGE, Hunter, LONG_SHOT_DELAY } from "./entity/hunter.ts";
 import { Pirate } from "./entity/pirate.ts";
 import { Pod } from "./entity/pod.ts";
 import { applyPowerup, BOOST_TIME, POWER_SHOTS, Powerup } from "./entity/powerup.ts";
@@ -336,6 +336,31 @@ describe("hunters", () => {
 			fired ||= loop.scene.some(entity => entity instanceof Shot && entity.owner == hunter);
 		}
 		expect(fired).toBe(false);
+	});
+
+	it("take long shots at a player who keeps out of range", async () => {
+		const { loop, player, hunter } = await face(-80);
+		player.engine.speed.value = player.engine.speed.target = hunter.engine.speed.limit; /* nose away from the hunter, as fast as it */
+		let fired = false;
+		for (let i = 0; i < Math.round((LONG_SHOT_DELAY - 0.5) / STEP); i++) {
+			loop.update(STEP);
+			fired ||= loop.scene.some(entity => entity instanceof Shot && entity.owner == hunter);
+		}
+		expect(fired).toBe(false);
+
+		run(loop, 2.5);
+		expect(vec3.distance(hunter.position, player.position)).toBeGreaterThan(FIRE_RANGE);
+		expect(player.shields.value).toBeLessThan(player.shields.max);
+	});
+
+	it("hold fire until in range while gaining on the player", async () => {
+		const { loop, player, hunter } = await face(-95);
+		let firstShotFrom = Infinity;
+		for (let i = 0; i < Math.round(4 / STEP) && firstShotFrom == Infinity; i++) {
+			loop.update(STEP);
+			if (loop.scene.some(entity => entity instanceof Shot && entity.owner == hunter)) { firstShotFrom = vec3.distance(hunter.position, player.position); }
+		}
+		expect(firstShotFrom).toBeLessThanOrEqual(FIRE_RANGE);
 	});
 
 	it("cannot hit pods in the line of fire", async () => {

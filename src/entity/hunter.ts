@@ -29,8 +29,14 @@ export const HUNTER: HunterOptions = {
 
 /** Fires only at a player this close (m) … */
 export const FIRE_RANGE = 70;
+/** … or, once it has stopped gaining on them, this close: about as far as its shots carry at a pilot backing away (m) … */
+export const LONG_FIRE_RANGE = 100;
 /** … and this close to straight ahead (rad) */
 const FIRE_CONE = 0.12;
+/** How long it chases a player, nose on them, without gaining on them before it takes long shots (s) */
+export const LONG_SHOT_DELAY = 2.5;
+/** Gaining on a player: getting this much closer than it has been since the nose came on them (m) */
+const GAIN = 3;
 /** Breaks off the attack when this close to the player (m) … */
 const BREAK_DISTANCE = 18;
 /** … and flies away for this long before turning back (s) */
@@ -48,6 +54,9 @@ export class Hunter extends Ship {
 	private mode: "attack" | "evade" = "attack";
 	private modeTime = 0;
 	private readonly evadeTo = vec3.create();
+	/** Nearest it has come to the target since its nose came on them (m), and how long since it last gained on them (s) */
+	private closest = Infinity;
+	private stalled = 0;
 
 	/** @param players Whom it hunts: one ship or a list kept up to date by the caller */
 	constructor(players: Ship | readonly Ship[], options: HunterOptions = HUNTER) {
@@ -79,7 +88,7 @@ export class Hunter extends Ship {
 
 	private think(dt: number): void {
 		this.trigger = false;
-		if (!this.target || this.target.dead) { this.target = nearestAlive(this, this.players); }
+		if (!this.target || this.target.dead) { this.chase(nearestAlive(this, this.players)); }
 
 		const player = this.target;
 		if (!player) {
@@ -95,13 +104,20 @@ export class Hunter extends Ship {
 			this.steerTowards(this.evadeTo);
 			if (this.modeTime >= EVADE_TIME) {
 				this.setMode("attack");
-				this.target = nearestAlive(this, this.players); /* whoever is closest now */
+				this.chase(nearestAlive(this, this.players)); /* whoever is closest now */
 			}
 			return;
 		}
 
 		const angle = this.steerTowards(player.position);
-		this.trigger = (distance <= FIRE_RANGE && angle <= FIRE_CONE);
+		if (angle > FIRE_CONE || distance < this.closest - GAIN) {
+			this.closest = distance;
+			this.stalled = 0;
+		} else {
+			this.stalled += dt;
+		}
+		const range = (this.stalled >= LONG_SHOT_DELAY ? LONG_FIRE_RANGE : FIRE_RANGE);
+		this.trigger = (distance <= range && angle <= FIRE_CONE);
 
 		if (distance < BREAK_DISTANCE) {
 			/* fly on past the player, veering off to a random side */
@@ -111,6 +127,12 @@ export class Hunter extends Ship {
 			vec3.add(this.evadeTo, this.evadeTo, side);
 			this.setMode("evade");
 		}
+	}
+
+	private chase(target: Ship | null): void {
+		this.target = target;
+		this.closest = Infinity;
+		this.stalled = 0;
 	}
 
 	private setMode(mode: Hunter["mode"]): void {
