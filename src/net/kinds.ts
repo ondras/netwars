@@ -28,10 +28,14 @@ export function kindOf(entity: Entity): EntityKind | null {
 
 export const kindIndex = (kind: EntityKind): number => ENTITY_KINDS.indexOf(kind);
 
-/** The number sent along with the position: shields of ships, length of grapples */
-export function extraOf(entity: Entity): number {
+/**
+ * The number sent along with the position: shields of ships, length of grapples, for a pod the id of whoever is carrying it off (0: nobody)
+ * @param idOf What an entity is sent as
+ */
+export function extraOf(entity: Entity, idOf: (entity: Entity) => number): number {
 	if (entity instanceof Ship) { return Math.round(entity.shields.value); }
 	if (entity instanceof Grapple) { return Math.round(entity.scale[1] * 100) / 100; }
+	if (entity instanceof Pod) { return (entity.carrier && !entity.carrier.dead ? idOf(entity.carrier) : 0); }
 	return 0;
 }
 

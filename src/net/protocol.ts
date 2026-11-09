@@ -157,7 +157,7 @@ export const powerupKind = (kind: PowerupKind): EntityKind => `powerup-${kind}`;
 
 /**
  * [id, kind (index in ENTITY_KINDS), x, y, z, qx, qy, qz, qw, extra]
- * extra: shields of ships, length of grapples, otherwise 0
+ * extra: shields of ships, length of grapples, for a pod the id of whoever is carrying it off; otherwise 0
  */
 export type EntityRecord = [number, number, number, number, number, number, number, number, number, number];
 

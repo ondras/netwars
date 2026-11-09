@@ -895,7 +895,7 @@ export class Room {
 			const id = this.id(entity);
 			const [x, y, z] = rounded(entity.position);
 			const q = entity.orientation;
-			records.push([id, kindIndex(kind), x, y, z, round(q[0], 4), round(q[1], 4), round(q[2], 4), round(q[3], 4), extraOf(entity)]);
+			records.push([id, kindIndex(kind), x, y, z, round(q[0], 4), round(q[1], 4), round(q[2], 4), round(q[3], 4), extraOf(entity, other => this.id(other))]);
 			if (kind == "rocket") { rockets.set(id, this.pilots.get((entity as Missile).owner!)); }
 		}
 		level.history.add(t, records);

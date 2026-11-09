@@ -11,7 +11,8 @@ import { ROCKET, ROCKET_CAPACITY } from "../entity/ship.ts";
 import { Shot } from "../entity/shot.ts";
 import { Loop } from "../loop.ts";
 import { settle, stubModels } from "../testing.ts";
-import { kindIndex } from "./kinds.ts";
+import type { Entity } from "../entity/entity.ts";
+import { extraOf, kindIndex } from "./kinds.ts";
 import type { ClientMessage, EntityKind, EntityRecord, GameEvent, Snapshot, StartMessage } from "./protocol.ts";
 import { INTERPOLATION_DELAY, OnlineSession } from "./session.ts";
 
@@ -79,6 +80,31 @@ describe("online session", () => {
 		const other = loop.scene.find(entity => entity instanceof PlayerShip && entity != ship)!;
 		expect(session.pilotOf(other)).toBe(2);
 		expect(session.pilotOf(ship)).toBeUndefined();
+	});
+
+	it("knows which thief is carrying a pod off, from the server, until it lets go", () => {
+		const { loop, clock, receive, run } = setup();
+		receive(0, [record(5, "pod", [0, -1.4, -20], 6), record(6, "pirate", [0, 0, -20], 50)]); /* the thief comes after the pod */
+		clock.now = INTERPOLATION_DELAY;
+		run(2 * loop.step);
+		const pod = loop.scene.find(entity => entity instanceof Pod)!;
+		expect(pod.carrier).toBe(loop.scene.find(entity => entity instanceof Pirate));
+
+		receive(0.2, [record(5, "pod", [0, -1.4, -20]), record(6, "pirate", [0, 0, -20], 50)]);
+		clock.now = 0.2 + INTERPOLATION_DELAY;
+		run(2 * loop.step);
+		expect(pod.carrier).toBeNull();
+	});
+
+	it("is sent, for a pod, the id of the thief carrying it off while there is one", () => {
+		const pirate = new Pirate([]);
+		const pod = new Pod();
+		const idOf = (entity: Entity) => (entity == pirate ? 6 : 99);
+		expect(extraOf(pod, idOf)).toBe(0);
+		pod.carrier = pirate;
+		expect(extraOf(pod, idOf)).toBe(6);
+		pirate.dead = true;
+		expect(extraOf(pod, idOf)).toBe(0);
 	});
 
 	it("shows the server's entities a moment in the past, moving smoothly between snapshots", async () => {

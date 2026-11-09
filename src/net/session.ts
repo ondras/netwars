@@ -4,6 +4,7 @@ import { explode } from "../entity/debris.ts";
 import type { Entity } from "../entity/entity.ts";
 import { Missile } from "../entity/missile.ts";
 import { PlayerShip } from "../entity/player-ship.ts";
+import { Pod } from "../entity/pod.ts";
 import { applyPowerup } from "../entity/powerup.ts";
 import { Ship } from "../entity/ship.ts";
 import { Shot } from "../entity/shot.ts";
@@ -265,14 +266,20 @@ export class OnlineSession {
 			}
 			vec3.lerp(copy.position, vec(from[2], from[3], from[4]), vec(to[2], to[3], to[4]), alpha);
 			quat.slerp(copy.orientation, quat.fromValues(from[5], from[6], from[7], from[8]), quat.fromValues(to[5], to[6], to[7], to[8]), alpha);
-			applyExtra(copy, from[9]);
+			this.takeExtra(copy, from[9]);
 		}
 	}
 
 	private setFrom(copy: Entity, [, , x, y, z, qx, qy, qz, qw, extra]: EntityRecord): void {
 		vec3.set(copy.position, x, y, z);
 		quat.set(copy.orientation, qx, qy, qz, qw);
+		this.takeExtra(copy, extra);
+	}
+
+	/** The record's extra number; for a pod, which copy is carrying it off */
+	private takeExtra(copy: Entity, extra: number): void {
 		applyExtra(copy, extra);
+		if (copy instanceof Pod) { copy.carrier = (extra ? this.copies.get(extra) ?? null : null); }
 	}
 
 	private forget(id: number, copy: Entity): void {
