@@ -1,11 +1,15 @@
 import { vec3 } from "gl-matrix";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { Entity } from "../entity/entity.ts";
+import { Pod } from "../entity/pod.ts";
 import { Powerup, POWERUPS, type PowerupKind } from "../entity/powerup.ts";
 import { Ship } from "../entity/ship.ts";
 import { MIN_ARENA_SIZE } from "../net/protocol.ts";
 import { RADAR_REACH, SENSE_FADE } from "../senses.ts";
-import { RadarScope } from "./radar-scope.ts";
+import { stubModels } from "../testing.ts";
+import { POD_COLOR, RadarScope } from "./radar-scope.ts";
+
+beforeAll(stubModels);
 
 const RANGE = 150;
 
@@ -27,6 +31,7 @@ function drawIn(reach: boolean, ...entities: Entity[]): Call[] {
 		set: (_, name, value) => {
 			state[name] = value;
 			if (name == "globalAlpha") { calls.push({ name: "alpha", args: [value] }); }
+			if (name == "strokeStyle") { calls.push({ name: "strokeStyle", args: [value] }); }
 			return true;
 		},
 	}) as unknown as CanvasRenderingContext2D;
@@ -90,6 +95,45 @@ describe("radar", () => {
 
 	it("fills the dots of contacts within range", () => {
 		expect(look(draw(at(new Ship(), 0, 30, -60))).hollow).toBe(false);
+	});
+
+	describe("a pod being carried off", () => {
+		function carriedOff() {
+			const thief = at(new Ship(), 0, 30, -60);
+			const pod = at(new Pod(), 0, 28.6, -60.3);
+			pod.carrier = thief;
+			return { thief, pod };
+		}
+		const arcs = (calls: readonly Call[]) => calls.filter(({ name }) => name == "arc").map(({ args }) => args as number[]);
+
+		it("shows on its thief, with no dot of its own: a halo of its colour round the thief's dot", () => {
+			const { thief, pod } = carriedOff();
+			const calls = draw(thief, pod);
+			const [dot, halo] = arcs(calls);
+			expect(arcs(calls)).toHaveLength(2);
+			expect(halo.slice(0, 2)).toEqual(dot.slice(0, 2));
+			expect(halo[2]).toBeGreaterThan(dot[2]);
+			/* the colour it is stroked in */
+			const haloAt = calls.length - 1 - [...calls].reverse().findIndex(({ name }) => name == "arc");
+			const strokedAt = haloAt + calls.slice(haloAt).findIndex(({ name }) => name == "stroke");
+			expect(calls.slice(0, strokedAt).filter(({ name }) => name == "strokeStyle").at(-1)?.args[0]).toBe(POD_COLOR);
+		});
+
+		it("dashes the thief's stalk with its colour, and nothing after", () => {
+			const { thief, pod } = carriedOff();
+			const dashes = draw(thief, pod).filter(({ name }) => name == "setLineDash").map(({ args }) => args[0] as number[]);
+			expect(dashes[0].length).toBeGreaterThan(0);
+			expect(dashes.at(-1)).toEqual([]);
+			expect(draw(at(new Ship(), 0, 30, -60)).some(({ name }) => name == "setLineDash")).toBe(false);
+		});
+
+		it("is a pod like any other again once its thief is destroyed", () => {
+			const { thief, pod } = carriedOff();
+			thief.dead = true;
+			const calls = draw(thief, pod);
+			expect(arcs(calls)).toHaveLength(1);
+			expect(calls.some(({ name }) => name == "setLineDash")).toBe(false);
+		});
 	});
 
 	describe("with a reach, as in a deathmatch", () => {

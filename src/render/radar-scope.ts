@@ -30,6 +30,14 @@ const LETTER_FONT = "bold 10px ui-monospace, monospace";
 const LETTER_RIM = 3;
 /** From a powerup's dot to its letter, beside it (px) */
 const LETTER_GAP = 4;
+/** Radius of a contact's dot, and of the hollow one of a contact beyond range (px) */
+const DOT_RADIUS = 2.5;
+const HOLLOW_RADIUS = 3;
+/** A thief carrying a pod off: the pod's colour dashed along its stalk … */
+const CARGO_DASH = [3, 3];
+/** … and as a halo round its dot, this far out from the dot and this thick (px) */
+const HALO_GAP = 0.5;
+const HALO_WIDTH = 1;
 
 /** @returns null for entities not shown on the radar */
 function contactColor(entity: Entity): string | null {
@@ -81,11 +89,17 @@ interface Plotted {
 	letter: string | null;
 	/** How much of it shows, 0..1 */
 	weight: number;
+	/** Carrying a pod off */
+	carrying: boolean;
 }
+
+/** Held by a thief that is still there: shown on the thief, not by itself */
+const carried = (entity: Entity): entity is Pod => entity instanceof Pod && entity.carrier !== null && !entity.carrier.dead;
 
 /**
  * Square grid in perspective. Contacts stand on stalks showing their height, or hang below the grid; a powerup has its letter
  * beside its dot. Those beyond its range are hollow dots at its edge, in the direction they are; their height shows just the same.
+ * A pod being carried off shows on its thief: dashes of its colour along the thief's stalk and a halo round the thief's dot.
  * With a reach (a deathmatch), what is farther does not show at all, fading out before.
  */
 export class RadarScope {
@@ -137,15 +151,16 @@ export class RadarScope {
 		ctx.fillText(`${this.range} m`, labelX, labelY - 6);
 
 		/* contacts, farthest first */
+		const carriers = new Set(entities.filter(carried).map(pod => pod.carrier));
 		const plotted: Plotted[] = [];
 		for (const entity of entities) {
-			if (entity == observer || entity.dead) { continue; }
+			if (entity == observer || entity.dead || carried(entity)) { continue; }
 			const color = contactColor(entity);
 			if (!color) { continue; }
 
 			const letter = (entity instanceof Powerup ? POWERUPS[entity.kind].letter : null);
 			const weight = (reach ? senseFade(vec3.distance(entity.position, observer.position), RADAR_REACH) : 1);
-			if (weight > 0) { plotted.push({ contact: radarContact(observer, entity, this.range), color, letter, weight }); }
+			if (weight > 0) { plotted.push({ contact: radarContact(observer, entity, this.range), color, letter, weight, carrying: carriers.has(entity) }); }
 		}
 		plotted.sort((a, b) => b.contact.forward - a.contact.forward);
 
@@ -153,7 +168,7 @@ export class RadarScope {
 		ctx.textAlign = "left";
 		ctx.textBaseline = "middle";
 
-		for (const { contact, color, letter, weight } of plotted) {
+		for (const { contact, color, letter, weight, carrying } of plotted) {
 			ctx.globalAlpha = weight;
 			const x = contact.x;
 			const z = -contact.forward;
@@ -164,18 +179,34 @@ export class RadarScope {
 			moveTo(x, 0, z);
 			lineTo(x, y, z);
 			ctx.stroke();
+			if (carrying) {
+				ctx.setLineDash(CARGO_DASH);
+				ctx.strokeStyle = POD_COLOR;
+				ctx.stroke();
+				ctx.setLineDash([]);
+				ctx.strokeStyle = color;
+			}
 
 			const [dotX, dotY] = toScreen(x, y, z);
+			const radius = (contact.outOfRange ? HOLLOW_RADIUS : DOT_RADIUS);
 			ctx.beginPath();
+			ctx.arc(dotX, dotY, radius, 0, 2 * Math.PI);
 			if (contact.outOfRange) {
-				ctx.arc(dotX, dotY, 3, 0, 2 * Math.PI);
 				ctx.fillStyle = "#000"; /* hollow: the stalk does not show inside */
 				ctx.fill();
 				ctx.stroke();
 				ctx.fillStyle = color;
 			} else {
-				ctx.arc(dotX, dotY, 2.5, 0, 2 * Math.PI);
 				ctx.fill();
+			}
+
+			if (carrying) {
+				ctx.beginPath();
+				ctx.arc(dotX, dotY, radius + HALO_GAP + HALO_WIDTH / 2, 0, 2 * Math.PI);
+				ctx.lineWidth = HALO_WIDTH;
+				ctx.strokeStyle = POD_COLOR;
+				ctx.stroke();
+				ctx.lineWidth = 1;
 			}
 
 			if (letter) {
