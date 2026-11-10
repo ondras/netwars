@@ -1,0 +1,28 @@
+{
+  "name": "netwars",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "start": "node server/main.ts",
+    "arena": "node server/arena.ts",
+    "analyze": "node server/analyze.ts",
+    "build": "tsc && tsc -p server && vite build",
+    "typecheck": "tsc && tsc -p server",
+    "test": "vitest run",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "gl-matrix": "3.4.4",
+    "jsfxr": "1.4.1",
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/ws": "8.18.2",
+    "typescript": "7.0.2",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
+  }
+}

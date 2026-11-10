@@ -1,0 +1,34 @@
+# NetWars on a server with Docker:
+#
+#   docker compose up -d --build        then open http://<the server's address>/
+#
+# HTTPS: point a domain name at the server, put  SITE_ADDRESS=game.example.com  into a file named .env
+# next to this one, and run the command again. Caddy gets the certificate and renews it
+# (ports 80 and 443 must be reachable from the internet). After a git pull, the same command rebuilds.
+
+services:
+  # the game and its online server
+  game:
+    build: .
+    restart: unless-stopped
+
+  # in front: HTTP, or HTTPS with automatic certificates; passes the game connection (/net) through
+  web:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    depends_on: [game]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  # certificates: kept, so that a restart does not ask for new ones
+  caddy-data:
+  caddy-config:

@@ -1,97 +1,692 @@
 <!doctype html>
 <html>
 	<head>
-		<script src="bower_components/gl-matrix/dist/gl-matrix.js"></script>
-		<script src="bower_components/promise.js/promise.js"></script>
-		<script src="bower_components/promise.js/promise-addons.js"></script>
-		<script src="js/loop.js"></script>
-		<script src="js/color.js"></script>
-		<script src="js/geometry.js"></script>
-		<script src="js/entity.js"></script>
-		<script src="js/entity.circle.js"></script>
-		<script src="js/entity.debris.js"></script>
-		<script src="js/entity.shot.js"></script>
-		<script src="js/entity.pod.js"></script>
-		<script src="js/entity.ship.js"></script>
-		<script src="js/camera.js"></script>
-		<script src="js/weapon.js"></script>
-		<script src="js/renderer.js"></script>
-		<script src="js/renderer.canvas.js"></script>
-		<script src="js/renderer.webgl.js"></script>
-		<script src="js/nsh.js"></script>
-		<script src="js/pilot.js"></script>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>NetWars</title>
+		<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 		<style>
-			xcanvas {
-				width: 800px;
+			html, body {
+				margin: 0;
+				height: 100%;
+				overflow: hidden;
+				background: #000;
 			}
 
-			canvas {
-				image-rendering: -webkit-optimize-contrast;
-				image-rendering: -moz-crisp-edges;
-				image-rendering: -o-crisp-edges;
-				image-rendering: crisp-edges;
+			#game {
+				position: fixed;
+				inset: 0;
 			}
 
-			canvas {
-				margin: 0.5em;
+			body.playing #game {
+				cursor: none; /* the HUD stick marker shows the mouse position */
+			}
+
+			#game canvas {
+				position: absolute;
+				inset: 0;
+				width: 100%;
+				height: 100%;
+				display: block;
+			}
+
+			#game canvas.hud {
+				pointer-events: none;
+			}
+
+			.panel {
+				position: fixed;
+				left: 50%;
+				top: 50%;
+				transform: translate(-50%, -50%);
+				box-sizing: border-box;
+				width: 380px;
+				max-width: calc(100vw - 32px);
+				max-height: calc(100vh - 32px);
+				overflow-y: auto;
+				padding: 24px 28px;
+				background: rgba(0, 0, 0, 0.8);
+				border: 1px solid rgba(110, 255, 140, 0.5);
+				color: rgba(110, 255, 140, 0.9);
+				font: 14px ui-monospace, monospace;
+				text-align: center;
+			}
+
+			.panel[hidden] {
+				display: none;
+			}
+
+			.panel h1 {
+				margin: 0 0 20px;
+				font-size: 32px;
+				letter-spacing: 0.2em;
+			}
+
+			.panel h2 {
+				margin: 0 0 12px;
+				font-size: 22px;
+			}
+
+			.panel .row {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				gap: 16px;
+				margin: 10px 0;
+			}
+
+			.panel select,
+			.panel button {
+				font: inherit;
+				color: inherit;
+				background-color: transparent;
+				border: 1px solid currentColor;
+				border-radius: 0;
+				cursor: pointer;
+			}
+
+			.panel button {
+				margin: 16px 6px 0;
+				padding: 6px 18px;
+			}
+
+			.panel select {
+				appearance: none;
+				padding: 4px 30px 4px 10px;
+				/* the arrow, in the panel green */
+				background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='rgb(110,255,140)' stroke-width='1.5'/%3E%3C/svg%3E");
+				background-repeat: no-repeat;
+				background-position: right 10px center;
+				background-size: 10px 6px;
+			}
+
+			.panel button:hover,
+			.panel button:focus-visible,
+			.panel select:hover,
+			.panel select:focus-visible {
+				background-color: rgba(110, 255, 140, 0.15);
+			}
+
+			.panel button:focus-visible,
+			.panel select:focus-visible {
+				outline: 1px solid currentColor;
+				outline-offset: 2px;
+			}
+
+			/* the open list: honoured by Firefox and by Chrome on Windows and Linux */
+			.panel option {
+				color: rgb(110, 255, 140);
+				background: #000;
+			}
+
+			/* browsers with customizable selects (Chrome 135+) style the open list fully */
+			@supports (appearance: base-select) {
+				.panel select,
+				.panel select::picker(select) {
+					appearance: base-select;
+				}
+
+				.panel select::picker-icon {
+					display: none; /* the background arrow is used instead */
+				}
+
+				.panel select::picker(select) {
+					margin-top: 2px;
+					padding: 0;
+					color: rgb(110, 255, 140);
+					background: #000;
+					border: 1px solid rgba(110, 255, 140, 0.5);
+				}
+
+				.panel option {
+					padding: 4px 10px;
+				}
+
+				.panel option:hover,
+				.panel option:focus-visible {
+					background: rgba(110, 255, 140, 0.15);
+					outline: none;
+				}
+			}
+
+			.panel input {
+				box-sizing: border-box;
+				width: 12em;
+				padding: 4px 8px;
+				font: inherit;
+				color: inherit;
+				background: transparent;
+				border: 1px solid currentColor;
+				border-radius: 0;
+			}
+
+			.panel input:focus-visible {
+				outline: 1px solid currentColor;
+				outline-offset: 2px;
+				background-color: rgba(110, 255, 140, 0.15);
+			}
+
+			.panel h3 {
+				margin: 22px 0 6px;
+				font-size: 12px;
+				font-weight: normal;
+				letter-spacing: 0.12em;
+				text-transform: uppercase;
+				opacity: 0.8;
+			}
+
+			.panel table {
+				width: 100%;
+				border-collapse: collapse;
+				font-size: 12px;
+				font-variant-numeric: tabular-nums;
+			}
+
+			.panel td {
+				padding: 2px 4px;
+				text-align: left;
+				white-space: nowrap;
+			}
+
+			.panel td.number {
+				text-align: right;
+			}
+
+			.board td.name {
+				width: 100%;
+				max-width: 0; /* takes the free width, long names end in an ellipsis */
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+
+			.board tr.current {
+				background: rgba(110, 255, 140, 0.15);
+			}
+
+			.board td.empty {
+				text-align: center;
+				opacity: 0.7;
+			}
+
+			.score {
+				margin-top: 10px;
+			}
+
+			.score tr.current {
+				background: rgba(110, 255, 140, 0.15);
+			}
+
+			.score td.name {
+				width: 100%;
+			}
+
+			.score tr.total td {
+				padding-top: 4px;
+				border-top: 1px solid rgba(110, 255, 140, 0.5);
+				font-weight: bold;
+			}
+
+			.panel .stack button {
+				display: block;
+				width: 100%;
+				margin: 10px 0 0;
+			}
+
+			.panel .slider {
+				display: flex;
+				align-items: center;
+				gap: 10px;
+			}
+
+			.panel input[type="range"] {
+				width: 9em;
+				padding: 0;
+				border: none;
+				accent-color: rgb(110, 255, 140);
+				cursor: pointer;
+			}
+
+			.panel output {
+				min-width: 4.5ch;
+				text-align: right;
+				font-variant-numeric: tabular-nums;
+			}
+
+			#help-panel {
+				width: 560px;
+				text-align: left;
+			}
+
+			#help-panel:focus {
+				outline: none; /* focused only so the keyboard scrolls it */
+			}
+
+			#help-panel h2,
+			#help-panel .help {
+				text-align: center;
+			}
+
+			#help-panel > button {
+				display: block;
+				margin: 22px auto 0;
+			}
+
+			#help-content {
+				font-size: 12.5px;
+				line-height: 1.5;
+			}
+
+			#help-content p {
+				margin: 0 0 8px;
+			}
+
+			#help-content dl {
+				display: grid;
+				grid-template-columns: max-content 1fr;
+				gap: 4px 14px;
+				margin: 0;
+			}
+
+			#help-content dt {
+				font-weight: bold;
+			}
+
+			#help-content dd {
+				margin: 0;
+			}
+
+			#help-content .items {
+				display: grid;
+				grid-template-columns: 24px 1fr;
+				gap: 4px 10px;
+				align-items: center;
+			}
+
+			#help-content .items svg {
+				display: block;
+			}
+
+			#help-content .items.ships {
+				grid-template-columns: 34px 1fr;
+				gap: 8px 12px;
+			}
+
+			#help-content .radar-dot {
+				font-size: 10px;
+				vertical-align: 1px;
+			}
+
+			#help-content .items.two {
+				grid-template-columns: 24px 1fr 24px 1fr;
+				gap: 6px 10px;
+			}
+
+			#help-content .aside {
+				margin-top: 6px;
+				font-size: 11.5px;
+				opacity: 0.75;
+			}
+
+			#result button {
+				transition: opacity 0.25s;
+			}
+
+			#result.guarded button {
+				opacity: 0.4; /* not taking clicks yet: see RESULT_CLICK_GUARD */
+			}
+
+			#result-name .rank {
+				margin: 16px 0 8px;
+				font-weight: bold;
+			}
+
+			#result-name button {
+				margin-top: 8px;
+			}
+
+			#level-description {
+				min-height: 2.6em;
+				margin: 4px 0 12px;
+				font-size: 12px;
+				text-align: left;
+				opacity: 0.85;
+			}
+
+			.panel .help {
+				margin: 18px 0 0;
+				font-size: 12px;
+				opacity: 0.7;
+			}
+
+			.panel .lead,
+			.panel .note {
+				margin: 4px 0 12px;
+				font-size: 12px;
+				opacity: 0.85;
+			}
+
+			.panel button:disabled,
+			.panel select:disabled {
+				opacity: 0.4;
+				cursor: default;
+			}
+
+			.panel button:disabled:hover,
+			.panel select:disabled:hover {
+				background-color: transparent;
+			}
+
+			.panel .error {
+				margin: 12px 0 0;
+				color: rgb(255, 110, 90);
+			}
+
+			.panel .code {
+				letter-spacing: 0.25em;
+				text-transform: uppercase;
+			}
+
+			#online-join .join {
+				display: flex;
+				gap: 8px;
+			}
+
+			#online-code {
+				width: 6.5em;
+			}
+
+			#online-join button {
+				margin: 0;
+				padding: 4px 12px;
+			}
+
+			#lobby .invite {
+				display: flex;
+				gap: 8px;
+				margin: 8px 0 4px;
+			}
+
+			#lobby-link {
+				flex: 1;
+				min-width: 0;
+				width: auto;
+				font-size: 12px;
+			}
+
+			#lobby .invite button {
+				margin: 0;
+				padding: 4px 12px;
+				white-space: nowrap;
+			}
+
+			#lobby-players {
+				margin: 0 0 8px;
+				padding: 0;
+				list-style: none;
+				text-align: left;
+			}
+
+			#lobby-players li {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 2px 0;
+			}
+
+			.panel .row button {
+				margin: 0;
+				padding: 4px 12px;
+			}
+
+			#lobby-players li button {
+				margin: 0 0 0 auto;
+				padding: 0 8px;
+				font-size: 12px;
+			}
+
+			#lobby-add-bot {
+				margin: 0 0 8px;
+				padding: 4px 12px;
+			}
+
+			#hangar {
+				width: 560px;
+			}
+
+			#hangar-view {
+				height: 240px;
+				border: 1px solid rgba(110, 255, 140, 0.5);
+				cursor: grab;
+				touch-action: pan-y;
+			}
+
+			#hangar-view:active {
+				cursor: grabbing;
+			}
+
+			#hangar-view canvas {
+				display: block;
+				width: 100%;
+				height: 100%;
+			}
+
+			#hangar-name {
+				margin: 10px 0;
+				font-weight: bold;
+			}
+
+			#hangar .picks {
+				display: grid;
+				gap: 6px;
+			}
+
+			#hangar-ships {
+				grid-template-columns: repeat(6, minmax(0, 1fr));
+			}
+
+			#hangar-skins {
+				grid-template-columns: repeat(3, minmax(0, 1fr));
+			}
+
+			@media (max-width: 480px) {
+				#hangar-ships {
+					grid-template-columns: repeat(4, minmax(0, 1fr));
+				}
+			}
+
+			#hangar .picks button {
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				min-width: 0;
+				margin: 0;
+				padding: 4px 2px;
+				font-size: 11px;
+				overflow-wrap: anywhere;
+			}
+
+			#hangar .picks button[aria-pressed="true"] {
+				background-color: rgba(110, 255, 140, 0.25);
+				outline: 1px solid currentColor;
+			}
+
+			#hangar .picks svg {
+				display: block;
+				max-width: 100%;
+			}
+
+			#lobby-description {
+				margin: 0 0 8px;
+				font-size: 12px;
+				text-align: left;
+				opacity: 0.85;
+			}
+
+			#reconnecting {
+				position: fixed;
+				top: 40px;
+				left: 50%;
+				transform: translateX(-50%);
+				z-index: 1;
+				display: flex;
+				align-items: center;
+				gap: 12px;
+				box-sizing: border-box;
+				max-width: calc(100vw - 32px);
+				padding: 8px 10px 8px 16px;
+				background: rgba(0, 0, 0, 0.8);
+				border: 1px solid rgba(255, 200, 90, 0.6);
+				color: rgb(255, 200, 90);
+				font: 14px ui-monospace, monospace;
+			}
+
+			#reconnecting[hidden] {
+				display: none;
+			}
+
+			#reconnecting button {
+				padding: 4px 12px;
+				font: inherit;
+				color: inherit;
+				background: transparent;
+				border: 1px solid currentColor;
+				border-radius: 0;
+				cursor: pointer;
+			}
+
+			#reconnecting button:hover,
+			#reconnecting button:focus-visible {
+				background-color: rgba(255, 200, 90, 0.15);
+			}
+
+			/* in flight the mouse steers: leave from the pause menu (Esc) instead */
+			body.playing #reconnecting {
+				padding-right: 16px;
+				pointer-events: none;
+			}
+
+			body.playing #reconnecting button {
+				display: none;
 			}
 		</style>
-
-<script id="vs" type="x-shader/x-vertex">
-attribute vec3 aPosition;
-attribute vec3 aColor;
-uniform mat4 uMVmatrix;
-uniform mat4 uPmatrix;
-varying vec3 vColor;
-
-void main(void) {
-	gl_Position = uPmatrix * uMVmatrix * vec4(aPosition, 1.0);
-	vColor = aColor;
-}
-</script>
-
-<script id="fs" type="x-shader/x-fragment">
-precision mediump float;
-varying vec3 vColor;
-
-void main(void) {
-	gl_FragColor = vec4(vColor, 1.0);
-}
-</script>		
-
-<script id="vs-billboard" type="x-shader/x-vertex">
-attribute vec3 aPosition;
-attribute float aRadius;
-uniform mat4 uMVmatrix;
-uniform mat4 uPmatrix;
-uniform float uViewport;
-
-void main(void) {
-	vec4 center = uMVmatrix * vec4(aPosition, 1.0);
-	vec4 offset = center;
-	offset.x += aRadius;
-
-	gl_Position = uPmatrix * center;
-	vec4 offsetPosition = uPmatrix * offset;
-
-	gl_PointSize = (offsetPosition.x/offsetPosition.w - gl_Position.x/gl_Position.w) * uViewport;
-}
-</script>
-
-<script id="fs-billboard" type="x-shader/x-fragment">
-precision mediump float;
-uniform sampler2D uTexture;
-
-void main(void) {
-	gl_FragColor = texture2D(uTexture, gl_PointCoord);
-	if (gl_FragColor.a < 0.5) { discard; }
-}
-</script>		
-
-
 	</head>
 	<body>
-		<p>([repeated] shift accelerate, [repeated] ctrl deaccelerate, upper left viewport provides mouse-based controls)</p>
-		<script src="js/main.js"></script>
+		<div id="game"></div>
+
+		<div id="title-screen" class="panel">
+			<h1>NETWARS</h1>
+			<div class="stack">
+				<button id="title-single">Single player</button>
+				<button id="title-multi">Multiplayer</button>
+				<button id="title-settings">Settings</button>
+				<button id="title-help">Help</button>
+			</div>
+			<p class="help">Mouse: steer · Button: fire<br>W / S: speed up / down · Esc: pause<br>Keep an enemy ahead to lock on, then<br>Enter / Space: launch a rocket</p>
+		</div>
+
+		<div id="single-player" class="panel" hidden>
+			<h2>Single player</h2>
+			<div class="row"><label for="level">Level</label><select id="level"></select></div>
+			<p id="level-description"></p>
+			<div class="row"><label for="difficulty">Difficulty</label><select id="difficulty"></select></div>
+			<button id="start">Start</button><button id="single-back">Back</button>
+			<h3 id="single-board-title">Best scores</h3>
+			<table id="single-board" class="board"></table>
+			<p class="help">Esc: back</p>
+		</div>
+
+		<div id="online" class="panel" hidden>
+			<h2>Multiplayer</h2>
+			<p class="lead">Up to 4 pilots: guard the pods together, or fight each other.</p>
+			<div class="row"><label for="online-name">Your name</label><input id="online-name" maxlength="16" autocomplete="nickname" spellcheck="false"></div>
+			<button id="online-create">Create a room</button>
+			<h3>Or join a room</h3>
+			<form id="online-join" class="row">
+				<label for="online-code">Room code</label>
+				<span class="join"><input id="online-code" class="code" maxlength="4" autocomplete="off" spellcheck="false"><button id="online-join-button" type="submit">Join</button></span>
+			</form>
+			<p id="online-error" class="error" role="alert" hidden></p>
+			<button id="online-back">Back</button>
+			<p class="help">Esc: back</p>
+		</div>
+
+		<div id="lobby" class="panel" hidden>
+			<h2>Room <span id="lobby-code" class="code"></span></h2>
+			<div class="invite"><input id="lobby-link" readonly aria-label="Invite link"><button id="lobby-copy">Copy link</button></div>
+			<h3 id="lobby-count">Pilots</h3>
+			<ol id="lobby-players"></ol>
+			<div class="row"><span>Your ship</span><button id="lobby-ship"></button></div>
+			<div class="row"><label for="lobby-mode">Mode</label><select id="lobby-mode"></select></div>
+			<div id="lobby-coop">
+				<div class="row"><label for="lobby-level">Level</label><select id="lobby-level"></select></div>
+				<p id="lobby-description"></p>
+				<div class="row"><label for="lobby-difficulty">Difficulty</label><select id="lobby-difficulty"></select></div>
+			</div>
+			<div id="lobby-match" hidden>
+				<div class="row"><label for="lobby-frags">Frag limit</label><select id="lobby-frags"></select></div>
+				<div class="row"><label for="lobby-time">Time limit</label><select id="lobby-time"></select></div>
+			</div>
+			<button id="lobby-add-bot" type="button">Add a bot</button>
+			<p id="lobby-note" class="note"></p>
+			<button id="lobby-start">Start</button><button id="lobby-leave">Leave</button>
+		</div>
+
+		<div id="reconnecting" role="status" hidden>
+			<span>Connection lost. Reconnecting…</span><button id="reconnecting-leave">Leave room</button>
+		</div>
+
+		<div id="result" class="panel" hidden>
+			<h2 id="result-title"></h2>
+			<p id="result-text"></p>
+			<table id="result-score" class="score"></table>
+			<form id="result-name" hidden>
+				<p class="rank" id="result-rank"></p>
+				<div class="row"><label for="player-name">Your name</label><input id="player-name" maxlength="16" autocomplete="nickname" spellcheck="false"></div>
+				<button type="submit">Save</button>
+			</form>
+			<h3 id="result-board-title">Best scores</h3>
+			<table id="result-board" class="board"></table>
+			<div id="result-actions"></div>
+		</div>
+
+		<div id="pause" class="panel" hidden>
+			<h2>Paused</h2>
+			<div class="stack">
+				<button id="resume">Resume</button>
+				<button id="pause-settings">Settings</button>
+				<button id="leave">Leave mission</button>
+			</div>
+			<p class="help">Esc: resume</p>
+		</div>
+
+		<div id="hangar" class="panel" hidden>
+			<h2>Your ship</h2>
+			<div id="hangar-view" role="img"></div>
+			<p id="hangar-name"></p>
+			<div id="hangar-ships" class="picks"></div>
+			<h3>Colours</h3>
+			<div id="hangar-skins" class="picks"></div>
+			<button id="hangar-back">Done</button>
+			<p class="help">Drag the ship to turn it · Esc: back<br>You fly from the cockpit, so this is how other pilots see you.</p>
+		</div>
+
+		<div id="settings" class="panel" hidden>
+			<h2>Settings</h2>
+			<div class="row">
+				<label for="effects-volume">Effects volume</label>
+				<span class="slider"><input id="effects-volume" type="range" min="0" max="100" step="5"><output id="effects-volume-value" for="effects-volume"></output></span>
+			</div>
+			<button id="settings-back">Back</button>
+			<p class="help">Esc: back</p>
+		</div>
+
+		<div id="help-panel" class="panel" tabindex="-1" hidden>
+			<h2>How to play</h2>
+			<div id="help-content"></div>
+			<button id="help-back">Back</button>
+			<p class="help">Esc: back</p>
+		</div>
+
+		<script type="module" src="/src/main.ts"></script>
 	</body>
 </html>
