@@ -180,6 +180,26 @@ describe("pirates", () => {
 		expect(loop.scene).not.toContain(grapple);
 	});
 
+	it("drop the pod where it is when destroyed between steps, as by a hit reported online, with the pods first in the scene as in a level", async () => {
+		const loop = new Loop();
+		const pod = new Pod();
+		pod.position[2] = -15;
+		const pirate = new Pirate(absentPlayer());
+		loop.scene.push(pod, pirate);
+		await settle();
+		runUntil(loop, () => pirate.cargo != null, 10);
+		run(loop, 0.5); /* moving off with it */
+
+		explode(pirate, loop);
+		loop.update(STEP);
+		const position = vec3.clone(pod.position);
+		run(loop, 1);
+
+		expect(pod.carrier).toBeNull();
+		expect(vec3.length(pod.velocity)).toBe(0);
+		expect(vec3.distance(pod.position, position)).toBeCloseTo(0);
+	});
+
 	it("fire missiles at a player in range, as strong as the difficulty says", async () => {
 		const loop = new Loop();
 		loop.difficulty = DIFFICULTIES.easy;
