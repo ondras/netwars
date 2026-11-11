@@ -4,7 +4,7 @@ import {
 } from "./entity/powerup.ts";
 import { gunshipShape, hunterShape, pirateShape, raiderShape } from "./entity/shapes.ts";
 import { STRAFE_SPEED } from "./entity/ship.ts";
-import { MECHANICS } from "./mechanics.ts";
+import { MECHANICS, type Mechanics } from "./mechanics.ts";
 import { arenaSizeFor, RESPAWN_DELAY } from "./net/protocol.ts";
 import { RADAR_REACH, SIGHT_REACH } from "./senses.ts";
 import { GUNSHIP_COLOR, HUNTER_COLOR, POD_COLOR, POWERUP_COLOR, RAIDER_COLOR, SHIP_COLOR } from "./render/radar-scope.ts";
@@ -35,9 +35,12 @@ const ICONS: Record<PowerupKind, string> = {
 /** Icon, name, then a few words on one line */
 const item = (icon: string, title: string, text: string) => `${icon}<div><b>${title}</b> – ${text}</div>`;
 
-/** How to play, short; numbers come from the game itself (static markup, no user input) */
-export function helpMarkup(): string {
+/** How to play with the given mechanics, short; numbers come from the game itself (static markup, no user input) */
+export function helpMarkup(mechanics: Mechanics): string {
 	const { easy, hard } = DIFFICULTIES;
+	const strafe = (MECHANICS[mechanics].strafing
+		? `<dt>A / D</dt><dd>strafe left / right while held, up to ${STRAFE_SPEED} m/s; your shots still go where the nose points</dd>`
+		: "");
 
 	return `
 		<p>Guard the pods. Win when no enemies are left and you still have a pod; lose every pod and it's over. A destroyed ship flies again ${RESPAWN_DELAY} s later, near the pods.</p>
@@ -47,7 +50,7 @@ export function helpMarkup(): string {
 			<dt>Mouse</dt><dd>steer</dd>
 			<dt>Mouse button</dt><dd>fire</dd>
 			<dt>W / S</dt><dd>faster / slower, below zero is reverse</dd>
-			<dt>A / D</dt><dd>${MECHANICS.modern.label} mechanics (Settings): strafe left / right while held, up to ${STRAFE_SPEED} m/s; your shots still go where the nose points</dd>
+			${strafe}
 			<dt>Enter / Space</dt><dd>rocket, once locked on</dd>
 			<dt>Esc</dt><dd>pause</dd>
 			<dt>N</dt><dd>online: names over the other pilots, on or off</dd>

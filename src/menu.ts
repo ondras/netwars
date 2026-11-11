@@ -125,10 +125,9 @@ export class Menu {
 
 		for (const [value, { label }] of Object.entries(MECHANICS)) { this.mechanicsSelect.append(new Option(label, value)); }
 		this.mechanicsSelect.value = mechanics();
-		this.describeMechanics();
 		this.mechanicsSelect.onchange = () => {
 			if (isMechanics(this.mechanicsSelect.value)) { setMechanics(this.mechanicsSelect.value); }
-			this.describeMechanics();
+			this.showMechanics();
 		};
 		element<HTMLButtonElement>("settings-back").onclick = () => this.closeModal();
 
@@ -141,7 +140,7 @@ export class Menu {
 			}, { capture: true });
 		}
 
-		element<HTMLElement>("help-content").innerHTML = helpMarkup();
+		this.showMechanics(); /* fills in the help too */
 		element<HTMLButtonElement>("title-help").onclick = () => this.openModal(this.help, this.titleScreen, this.help); /* the panel, not its button at the bottom, so it opens scrolled to the top */
 		element<HTMLButtonElement>("help-back").onclick = () => this.closeModal();
 		element<HTMLButtonElement>("resume").onclick = () => this.onResume?.();
@@ -323,9 +322,12 @@ export class Menu {
 		element<HTMLElement>("mechanics-locked").hidden = !locked;
 	}
 
-	private describeMechanics(): void {
-		const value = this.mechanicsSelect.value;
-		element<HTMLElement>("mechanics-description").textContent = (isMechanics(value) ? MECHANICS[value].description : "");
+	/** The chosen mechanics: described in the settings, their controls under the title and in the help */
+	private showMechanics(): void {
+		const chosen = mechanics();
+		element<HTMLElement>("mechanics-description").textContent = MECHANICS[chosen].description;
+		element<HTMLElement>("title-strafe").hidden = !MECHANICS[chosen].strafing;
+		element<HTMLElement>("help-content").innerHTML = helpMarkup(chosen);
 	}
 
 	private describeLevel(): void {
