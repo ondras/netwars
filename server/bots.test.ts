@@ -2,6 +2,7 @@ import { quat, vec3 } from "gl-matrix";
 import { beforeAll, describe, expect, it } from "vitest";
 import { botTraits, noticeChance, POD_CLEARANCE } from "../src/bot.ts";
 import { SENSE_FADE, SIGHT_REACH } from "../src/senses.ts";
+import { Hunter } from "../src/entity/hunter.ts";
 import { Missile } from "../src/entity/missile.ts";
 import { Pirate } from "../src/entity/pirate.ts";
 import type { PlayerShip } from "../src/entity/player-ship.ts";
@@ -12,6 +13,7 @@ import { angleOffNose } from "../src/lock.ts";
 import type { Loop } from "../src/loop.ts";
 import { DIFFICULTIES } from "../src/difficulty.ts";
 import { enemyWaves, LEVELS } from "../src/levels.ts";
+import type { Mechanics } from "../src/mechanics.ts";
 import { MAX_PLAYERS, type ServerMessage, type Snapshot } from "../src/net/protocol.ts";
 import { settle, stubModels } from "../src/testing.ts";
 import { analyze, analyzeCoop, coopReport, report } from "./analyze.ts";
@@ -368,10 +370,10 @@ describe("how bots fly", () => {
 
 describe("bots in co-op", () => {
 	/** A co-op level of a person and a bot, the bot 200 m off the pods, facing -Z, the enemies not sent in yet */
-	async function defending(): Promise<{ room: Room; loop: Loop; bot: PlayerShip; person: PlayerShip }> {
+	async function defending(traits = botTraits(), mechanics: Mechanics = "classic"): Promise<{ room: Room; loop: Loop; bot: PlayerShip; person: PlayerShip }> {
 		const host = member(1);
-		const room = new Room("ABCD", host, 0, "normal");
-		room.addBot(host.id, 10);
+		const room = new Room("ABCD", host, 0, "normal", null, mechanics);
+		room.addBot(host.id, 10, traits);
 		room.start(host.id);
 		await settle();
 		const loop = loopOf(room);
@@ -417,6 +419,52 @@ describe("bots in co-op", () => {
 		}
 		expect(heldWithPodInLine).toBe(true);
 		expect(pod.dead).toBe(false);
+	});
+
+	/** Each step of `seconds`: the strafe the bot asks for, and whether its trigger is down */
+	function watch(room: Room, bot: PlayerShip, seconds: number): Array<{ t: number; strafe: number; trigger: boolean }> {
+		const steps = [];
+		for (let t = 0; t < seconds; t += 0.05) {
+			room.advance(0.05);
+			steps.push({ t, strafe: bot.engine.strafe.target, trigger: bot.trigger });
+		}
+		return steps;
+	}
+
+	it("strafe aside for about a second once a hunter has been shooting at them for a moment, having fired back", async () => {
+		const { room, loop, bot } = await defending({ ...botTraits(), strafing: 1 }, "modern");
+		const hunter = new Hunter(loop.players);
+		vec3.set(hunter.position, 200, 0, -90);
+		quat.setAxisAngle(hunter.orientation, vec3.fromValues(0, 1, 0), Math.PI); /* nose on the bot */
+		loop.spawn(hunter);
+
+		const steps = watch(room, bot, 6);
+		const start = steps.findIndex(step => step.strafe != 0);
+		expect(start).toBeGreaterThan(0);
+		const length = steps.slice(start).findIndex(step => step.strafe == 0);
+		expect(length * 0.05).toBeGreaterThanOrEqual(0.4 - 0.05);
+		expect(length * 0.05).toBeLessThanOrEqual(1.1 + 0.05);
+		expect(steps.slice(Math.max(0, start - 20), start).some(step => step.trigger)).toBe(true); /* it fired in the second before */
+		expect(Math.abs(steps[start].strafe)).toBe(bot.engine.strafe.limit);
+	});
+
+	it("never strafe with classic mechanics", async () => {
+		const { room, loop, bot } = await defending({ ...botTraits(), strafing: 1 });
+		const hunter = new Hunter(loop.players);
+		vec3.set(hunter.position, 200, 0, -90);
+		quat.setAxisAngle(hunter.orientation, vec3.fromValues(0, 1, 0), Math.PI);
+		loop.spawn(hunter);
+		const steps = watch(room, bot, 6);
+		expect(steps.some(step => step.trigger)).toBe(true);
+		expect(steps.every(step => step.strafe == 0)).toBe(true);
+	});
+
+	it("never strafe from a pirate: its missiles home in", async () => {
+		const { room, loop, bot } = await defending({ ...botTraits(), strafing: 1 }, "modern");
+		const pirate = pirateAt(loop, 200, 0, -60);
+		quat.setAxisAngle(pirate.orientation, vec3.fromValues(0, 1, 0), Math.PI);
+		const steps = watch(room, bot, 4);
+		expect(steps.every(step => step.strafe == 0)).toBe(true);
 	});
 
 	it("keep near the pods while no enemy is about", async () => {
