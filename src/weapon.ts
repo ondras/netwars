@@ -5,7 +5,7 @@ import { Shot } from "./entity/shot.ts";
 export interface WeaponOptions {
 	/** Time between shots (s) */
 	reload: number;
-	/** Shot speed relative to the firing entity (m/s) */
+	/** Shot speed relative to the firing entity's motion along its nose (m/s) */
 	muzzleSpeed: number;
 	/** Shot life span (s) */
 	lifetime: number;
@@ -28,6 +28,15 @@ const DEFAULTS: WeaponOptions = {
 	muzzle: [0, -0.3, -3],
 	color: 0xffffff,
 };
+
+/**
+ * What a shot keeps of the firing entity's velocity: only the part along its nose, so a shot fired while strafing
+ * still goes where the nose points
+ */
+export function carriedVelocity(owner: Pick<Entity, "orientation" | "velocity">): vec3 {
+	const axis = vec3.transformQuat(vec3.create(), vec3.fromValues(0, 0, -1), owner.orientation); /* -Z is the default model orientation */
+	return vec3.scale(axis, axis, vec3.dot(owner.velocity, axis));
+}
 
 export class Weapon {
 	readonly options: WeaponOptions;
@@ -57,7 +66,7 @@ export class Weapon {
 		const offset = vec3.transformQuat(vec3.create(), vec3.fromValues(...muzzle), owner.orientation);
 
 		const position = vec3.add(vec3.create(), owner.position, offset);
-		const velocity = vec3.scaleAndAdd(vec3.create(), owner.velocity, direction, muzzleSpeed);
+		const velocity = vec3.scaleAndAdd(vec3.create(), carriedVelocity(owner), direction, muzzleSpeed);
 
 		const { lifetime, damage, color } = { ...this.options, ...load };
 		return new Shot(position, velocity, owner, lifetime, damage, color);

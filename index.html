@@ -344,7 +344,8 @@
 				margin-top: 8px;
 			}
 
-			#level-description {
+			#level-description,
+			#mechanics-description {
 				min-height: 2.6em;
 				margin: 4px 0 12px;
 				font-size: 12px;
@@ -581,7 +582,7 @@
 				<button id="title-settings">Settings</button>
 				<button id="title-help">Help</button>
 			</div>
-			<p class="help">Mouse: steer · Button: fire<br>W / S: speed up / down · Esc: pause<br>Keep an enemy ahead to lock on, then<br>Enter / Space: launch a rocket</p>
+			<p class="help">Mouse: steer · Button: fire · Esc: pause<br>W / S: speed up / down<br>Keep an enemy ahead to lock on, then<br>Enter / Space: launch a rocket</p>
 		</div>
 
 		<div id="single-player" class="panel" hidden>
@@ -617,6 +618,7 @@
 			<ol id="lobby-players"></ol>
 			<div class="row"><span>Your ship</span><button id="lobby-ship"></button></div>
 			<div class="row"><label for="lobby-mode">Mode</label><select id="lobby-mode"></select></div>
+			<div class="row"><span>Mechanics</span><span id="lobby-mechanics" title="Set by whoever created the room"></span></div>
 			<div id="lobby-coop">
 				<div class="row"><label for="lobby-level">Level</label><select id="lobby-level"></select></div>
 				<p id="lobby-description"></p>
@@ -676,6 +678,9 @@
 				<label for="effects-volume">Effects volume</label>
 				<span class="slider"><input id="effects-volume" type="range" min="0" max="100" step="5"><output id="effects-volume-value" for="effects-volume"></output></span>
 			</div>
+			<div class="row"><label for="mechanics">Mechanics</label><select id="mechanics"></select></div>
+			<p id="mechanics-description"></p>
+			<p id="mechanics-locked" class="note" hidden>Mechanics can be changed between games, from the title screen.</p>
 			<button id="settings-back">Back</button>
 			<p class="help">Esc: back</p>
 		</div>

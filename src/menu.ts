@@ -1,6 +1,7 @@
 import { DIFFICULTIES, difficultyLevel, isDifficultyLevel, setDifficulty } from "./difficulty.ts";
 import { helpMarkup } from "./help.ts";
 import type { LevelConfig } from "./levels.ts";
+import { isMechanics, MECHANICS, mechanics, setMechanics } from "./mechanics.ts";
 import type { Standing } from "./net/protocol.ts";
 import type { Entry, Leaderboard, Score } from "./scores.ts";
 
@@ -48,7 +49,7 @@ function renderBoard(table: HTMLTableElement, entries: readonly Entry[], current
 	table.replaceChildren(...entries.map((entry, i) => row([
 		[`${i + 1}.`, "number"],
 		[entry.name, "name"],
-		[DIFFICULTIES[entry.difficulty].label, ""],
+		[DIFFICULTIES[entry.difficulty].label + (entry.mechanics == "modern" ? ` · ${MECHANICS.modern.label}` : ""), ""], /* classic, unless it says */
 		[String(entry.score), "number"],
 	], entry.id == current ? "current" : "")));
 }
@@ -80,6 +81,7 @@ export class Menu {
 	private readonly levelSelect = element<HTMLSelectElement>("level");
 	private readonly levelDescription = element<HTMLElement>("level-description");
 	private readonly difficultySelect = element<HTMLSelectElement>("difficulty");
+	private readonly mechanicsSelect = element<HTMLSelectElement>("mechanics");
 	private readonly result = element<HTMLElement>("result");
 	private readonly pause = element<HTMLElement>("pause");
 	private readonly settings = element<HTMLElement>("settings");
@@ -112,8 +114,22 @@ export class Menu {
 		element<HTMLButtonElement>("start").onclick = () => this.start();
 		element<HTMLButtonElement>("single-back").onclick = () => this.showTitle();
 		const volumeSlider = element<HTMLInputElement>("effects-volume");
-		element<HTMLButtonElement>("title-settings").onclick = () => this.openModal(this.settings, this.titleScreen, volumeSlider);
-		element<HTMLButtonElement>("pause-settings").onclick = () => this.openModal(this.settings, this.pause, volumeSlider);
+		element<HTMLButtonElement>("title-settings").onclick = () => {
+			this.lockMechanics(false);
+			this.openModal(this.settings, this.titleScreen, volumeSlider);
+		};
+		element<HTMLButtonElement>("pause-settings").onclick = () => {
+			this.lockMechanics(true); /* the level, or the room, plays on as it started */
+			this.openModal(this.settings, this.pause, volumeSlider);
+		};
+
+		for (const [value, { label }] of Object.entries(MECHANICS)) { this.mechanicsSelect.append(new Option(label, value)); }
+		this.mechanicsSelect.value = mechanics();
+		this.describeMechanics();
+		this.mechanicsSelect.onchange = () => {
+			if (isMechanics(this.mechanicsSelect.value)) { setMechanics(this.mechanicsSelect.value); }
+			this.describeMechanics();
+		};
 		element<HTMLButtonElement>("settings-back").onclick = () => this.closeModal();
 
 		/* caught before anything else sees them: no button press, no focus change (mousedown), no firing */
@@ -299,6 +315,17 @@ export class Menu {
 	private dropModal(): void {
 		if (this.modal) { this.modal.panel.hidden = true; }
 		this.modal = null;
+	}
+
+	/** Mechanics can be changed only between games */
+	private lockMechanics(locked: boolean): void {
+		this.mechanicsSelect.disabled = locked;
+		element<HTMLElement>("mechanics-locked").hidden = !locked;
+	}
+
+	private describeMechanics(): void {
+		const value = this.mechanicsSelect.value;
+		element<HTMLElement>("mechanics-description").textContent = (isMechanics(value) ? MECHANICS[value].description : "");
 	}
 
 	private describeLevel(): void {

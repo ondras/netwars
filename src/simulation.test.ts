@@ -3,10 +3,12 @@ import { describe, expect, it } from "vitest";
 import { Color } from "./color.ts";
 import { Debris, explode } from "./entity/debris.ts";
 import { Entity } from "./entity/entity.ts";
-import { Ship } from "./entity/ship.ts";
+import { PlayerShip } from "./entity/player-ship.ts";
+import { BUMP_SPEED_KEPT, Ship, STRAFE_ACCELERATION, STRAFE_SPEED } from "./entity/ship.ts";
 import { Shot } from "./entity/shot.ts";
 import { triangle } from "./geometry.ts";
 import { Loop } from "./loop.ts";
+import type { Mechanics } from "./mechanics.ts";
 import { Weapon } from "./weapon.ts";
 
 const STEP = 0.015;
@@ -101,6 +103,16 @@ describe("shots", () => {
 
 		const shot = new Weapon({ muzzleSpeed: 50 }).fire(owner)!;
 
+		expect(shot.velocity[2]).toBeCloseTo(-60);
+	});
+
+	it("keep only the owner's forward velocity, so that a strafing ship's shots go where its nose points", () => {
+		const owner = new Entity();
+		vec3.set(owner.velocity, 5, 0, -10); /* strafing right */
+
+		const shot = new Weapon({ muzzleSpeed: 50 }).fire(owner)!;
+
+		expect(shot.velocity[0]).toBeCloseTo(0);
 		expect(shot.velocity[2]).toBeCloseTo(-60);
 	});
 });
@@ -210,6 +222,72 @@ describe("speed", () => {
 		run(loop, 3);
 		expect(ship.engine.speed.value).toBeCloseTo(-limit);
 		expect(ship.velocity[2]).toBeCloseTo(limit); /* moving backwards: +Z */
+	});
+});
+
+describe("strafing", () => {
+	function strafer(mechanics: Mechanics = "modern"): { loop: Loop; ship: PlayerShip } {
+		const loop = new Loop();
+		const ship = new PlayerShip(undefined, mechanics);
+		loop.scene.push(ship);
+		return { loop, ship };
+	}
+
+	it("slides a player's ship sideways up to its strafe speed, and stops when let go", () => {
+		const { loop, ship } = strafer();
+		ship.engine.strafe.target = 100;
+
+		run(loop, 0.15); /* 20 m/s² → 3 m/s */
+		expect(ship.engine.strafe.value).toBeCloseTo(STRAFE_ACCELERATION * 0.15);
+
+		run(loop, 1);
+		expect(ship.velocity[0]).toBeCloseTo(STRAFE_SPEED); /* to the right: +X */
+		expect(ship.velocity[2]).toBeCloseTo(0);
+
+		ship.engine.strafe.target = 0;
+		run(loop, 1);
+		expect(vec3.length(ship.velocity)).toBeCloseTo(0);
+	});
+
+	it("is slower than flying forward, and takes some of the forward speed at full throttle", () => {
+		const { loop, ship } = strafer();
+		const { speed, strafe } = ship.engine;
+		expect(STRAFE_SPEED).toBeLessThan(speed.limit);
+
+		speed.target = speed.limit;
+		strafe.target = -strafe.limit;
+		run(loop, 2);
+		expect(vec3.length(ship.velocity)).toBeCloseTo(ship.topSpeed);
+		expect(ship.velocity[0]).toBeLessThan(0); /* to the left */
+		expect(-ship.velocity[2]).toBeLessThan(speed.limit);
+	});
+
+	it("is for modern mechanics only: with classic ones, a player's ship keeps going where its nose points", () => {
+		const { loop, ship } = strafer("classic");
+		ship.engine.strafe.target = 100;
+		run(loop, 1);
+		expect(ship.velocity[0]).toBe(0);
+	});
+
+	it("is for players only: other ships keep going where their nose points", () => {
+		const loop = new Loop();
+		const ship = new Ship();
+		ship.engine.strafe.target = 100;
+		loop.scene.push(ship);
+
+		run(loop, 1);
+		expect(ship.velocity[0]).toBe(0);
+	});
+
+	it("stops after a bump like the forward speed does", () => {
+		const { loop, ship } = strafer();
+		ship.engine.strafe.value = ship.engine.strafe.target = STRAFE_SPEED;
+		ship.bump();
+		expect(ship.engine.strafe.value).toBeCloseTo(STRAFE_SPEED * BUMP_SPEED_KEPT);
+
+		ship.revive();
+		run(loop, 0.5);
+		expect(ship.velocity[0]).toBe(0);
 	});
 });
 

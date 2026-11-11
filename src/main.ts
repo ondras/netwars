@@ -2,6 +2,7 @@ import { difficultyLevel } from "./difficulty.ts";
 import { Game, type LevelResult } from "./game.ts";
 import { Hangar } from "./hangar.ts";
 import { LEVELS } from "./levels.ts";
+import { mechanics } from "./mechanics.ts";
 import { Menu, type ResultAction } from "./menu.ts";
 import { Connection, type CloseReason } from "./net/connection.ts";
 import { invitedTo, OnlineMenu } from "./net/online-menu.ts";
@@ -74,7 +75,7 @@ game.onOutcome = (result: LevelResult) => {
 	const points = score({ won: outcome == "won", podsLeft, destroyed, shields, difficulty });
 	/* co-op runs have boards of their own */
 	const board = (result.online ? `${name} · co-op` : name);
-	const details = { score: points, level: board, entry: leaderboard.add(board, points.total, difficulty) };
+	const details = { score: points, level: board, entry: leaderboard.add(board, points.total, difficulty, result.mechanics) };
 
 	const next = level + 1;
 	const last = (next < LEVELS.length ? "" : " That was the last level.");
@@ -151,7 +152,7 @@ online.onCreate = name => {
 	/* what the host picked last time, unless its level is no more */
 	const last = lastRoomSetup();
 	const setup = (last && LEVELS[last.level] ? last : null);
-	const create: ClientMessage = { type: "create", name, level: setup?.level ?? menu.selectedLevel, difficulty: setup?.difficulty ?? difficultyLevel(), look: shipLook() };
+	const create: ClientMessage = { type: "create", name, level: setup?.level ?? menu.selectedLevel, difficulty: setup?.difficulty ?? difficultyLevel(), mechanics: mechanics(), look: shipLook() };
 	void connectThen(name, create, ...(setup ? [{ type: "setup", ...setup } as const] : []));
 };
 online.onJoin = (code, name) => connectThen(name, { type: "join", code, name, look: shipLook() });

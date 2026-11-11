@@ -1,4 +1,6 @@
-/** Game settings that change with the chosen difficulty; read when used, so a change applies at once */
+import { mechanics, type Mechanics } from "./mechanics.ts";
+
+/** Game settings that change with the chosen difficulty (and some with the mechanics); read when used, so a change applies at once */
 export interface Difficulty {
 	readonly label: string;
 	/** Shield points a pirate missile takes */
@@ -9,6 +11,11 @@ export interface Difficulty {
 	readonly missileInterval: readonly [number, number];
 	/** Shield points a hunter's shot takes */
 	readonly hunterDamage: number;
+	/**
+	 * How far ahead of a moving pilot hunters and gunships aim, as a share of what it takes to hit them if they fly on
+	 * the same way: 0 aims where they are, 1 where they will be. Below 1, a pilot crossing or strafing gets missed by a bit.
+	 */
+	readonly hunterLead: number;
 	/**
 	 * How many pod thieves come, as a multiple of what the level has (levels.ts, enemyWaves): they come sooner and more at once,
 	 * so that the level lasts about as long. The other enemies come after the pilots, and their damage is what makes it harder for them.
@@ -24,10 +31,10 @@ export interface Difficulty {
 }
 
 /*
- * Tuned on 2026-11-08 with bots in co-op levels (`pnpm arena coop`), destroyed ships flying again: more thieves rather than tougher ones.
- * Alone, a bot that reacts like the user (COOP_PILOTS.person) never dies on easy and loses about 0.2 pods a level; on normal it loses
- * about 0.9 and dies about twice in each of the last two levels, never in the first two. A quicker one (COOP_PILOTS.ace) loses
- * about 1.1 on hard, 2.7 in the last level, dying about as often as the other on normal.
+ * Classic mechanics. Tuned on 2026-11-08 with bots in co-op levels (`pnpm arena coop`), destroyed ships flying again: more thieves
+ * rather than tougher ones. Alone, a bot that reacts like the user (COOP_PILOTS.person) never dies on easy and loses about 0.2 pods a
+ * level; on normal it loses about 0.9 and dies about twice in each of the last two levels, never in the first two. A quicker one
+ * (COOP_PILOTS.ace) loses about 1.1 on hard, 2.7 in the last level, dying about as often as the other on normal.
  *
  * Retuned on 2026-11-11 for enemies in groups (burst): with the pause after each group the bots died less (person, normal: about
  * 0.5 deaths less in levels 5 and 6; ace, hard: the same), so hunterDamage went up until they die about as often as when enemies
@@ -36,19 +43,39 @@ export interface Difficulty {
  * 60 runs: within 0.2; 17 was 0.4-0.65 over). Pods are lost a little more often, thieves coming together.
  */
 export const DIFFICULTIES = {
-	easy: { label: "Easy", missileDamage: 8, missileTurnRate: 1.6, missileInterval: [6, 10], hunterDamage: 3, thieves: 0.75, thiefSpeed: 0.6, burst: 1 },
-	normal: { label: "Normal", missileDamage: 9, missileTurnRate: 2, missileInterval: [4, 8], hunterDamage: 13, thieves: 1, thiefSpeed: 1, burst: 2 },
-	hard: { label: "Hard", missileDamage: 9, missileTurnRate: 2.5, missileInterval: [3, 6], hunterDamage: 15, thieves: 1.75, thiefSpeed: 1, burst: 3 },
+	easy: { label: "Easy", missileDamage: 8, missileTurnRate: 1.6, missileInterval: [6, 10], hunterDamage: 3, hunterLead: 0, thieves: 0.75, thiefSpeed: 0.6, burst: 1 },
+	normal: { label: "Normal", missileDamage: 9, missileTurnRate: 2, missileInterval: [4, 8], hunterDamage: 13, hunterLead: 0, thieves: 1, thiefSpeed: 1, burst: 2 },
+	hard: { label: "Hard", missileDamage: 9, missileTurnRate: 2.5, missileInterval: [3, 6], hunterDamage: 15, hunterLead: 0, thieves: 1.75, thiefSpeed: 1, burst: 3 },
 } as const satisfies Record<string, Difficulty>;
 
 export type DifficultyLevel = keyof typeof DIFFICULTIES;
+
+/*
+ * Modern mechanics, where pilots strafe: hunters and gunships lead their shots, and with bots that strafe like the user (once per
+ * attack, about a second, having fired first) hunterDamage went up on 2026-11-09 until the bots died about as often in levels 3-6
+ * as with classic mechanics, enemies then coming one at a time: from 10 to 15 on normal (person bot, 60 runs on levels 3-4 and 140
+ * on 5-6: within 0.16 deaths a level), from 12 to 16 on hard (ace, 30 and 60 runs: within 0.1). Easy stays: the person bot died
+ * 2 times in 80 runs there without strafing, 0 times strafing. Groups of enemies (burst 2) then made normal harder for the user,
+ * who found it too easy, and they are kept so: the bot died 0.1-0.25 more often in levels 3-5 with them, and 0.15 less in level 6.
+ */
+export const MODERN: Record<DifficultyLevel, Partial<Difficulty>> = {
+	easy: { hunterLead: 0.5 },
+	normal: { hunterDamage: 15, hunterLead: 0.8 },
+	hard: { hunterDamage: 16, hunterLead: 1 },
+};
+
+/** The settings of a difficulty with the given mechanics */
+export function difficultyOf(level: DifficultyLevel, mechanics: Mechanics): Difficulty {
+	return (mechanics == "modern" ? { ...DIFFICULTIES[level], ...MODERN[level] } : DIFFICULTIES[level]);
+}
 
 const STORAGE_KEY = "netwars.difficulty";
 
 let level: DifficultyLevel = load() ?? "normal";
 
+/** The chosen difficulty, with the chosen mechanics */
 export function difficulty(): Difficulty {
-	return DIFFICULTIES[level];
+	return difficultyOf(level, mechanics());
 }
 
 export function difficultyLevel(): DifficultyLevel {

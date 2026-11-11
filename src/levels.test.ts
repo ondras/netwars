@@ -1,14 +1,14 @@
 import { vec3 } from "gl-matrix";
 import { beforeAll, describe, expect, it } from "vitest";
 import { Color } from "./color.ts";
-import { DIFFICULTIES } from "./difficulty.ts";
+import { DIFFICULTIES, difficultyOf } from "./difficulty.ts";
 import { explode } from "./entity/debris.ts";
 import { Entity } from "./entity/entity.ts";
 import { FIRE_RANGE, Hunter, LONG_SHOT_DELAY } from "./entity/hunter.ts";
 import { Pirate } from "./entity/pirate.ts";
 import { Pod } from "./entity/pod.ts";
 import { applyPowerup, BOOST_TIME, POWER_SHOTS, Powerup } from "./entity/powerup.ts";
-import { BOOST_FACTOR, BOOST_RAMP, POWER_SHOT, Ship } from "./entity/ship.ts";
+import { BOOST_FACTOR, BOOST_RAMP, POWER_SHOT, Ship, STRAFE_SPEED } from "./entity/ship.ts";
 import { Shot } from "./entity/shot.ts";
 import { EnemySpawner } from "./entity/spawner.ts";
 import { triangle } from "./geometry.ts";
@@ -129,6 +129,24 @@ describe("enemy waves", () => {
 		expect(normal.hunterDamage).toBeLessThan(hard.hunterDamage);
 		expect(easy.missileDamage).toBeLessThanOrEqual(normal.missileDamage);
 		expect(normal.missileDamage).toBeLessThanOrEqual(hard.missileDamage);
+	});
+
+	it("with modern mechanics, aim ahead of pilots who strafe, more so and harder with the difficulty; with classic ones, at the pilot", () => {
+		const levels = ["easy", "normal", "hard"] as const;
+		for (const level of levels) {
+			const classic = difficultyOf(level, "classic");
+			const modern = difficultyOf(level, "modern");
+			expect(classic).toBe(DIFFICULTIES[level]);
+			expect(classic.hunterLead).toBe(0);
+			expect(modern.hunterLead).toBeGreaterThan(0);
+			expect(modern.hunterDamage).toBeGreaterThanOrEqual(classic.hunterDamage);
+			expect({ ...modern, hunterLead: 0, hunterDamage: 0 }).toEqual({ ...classic, hunterLead: 0, hunterDamage: 0 }); /* nothing else changes */
+		}
+		const [easy, normal, hard] = levels.map(level => difficultyOf(level, "modern"));
+		expect(easy.hunterLead).toBeLessThan(normal.hunterLead);
+		expect(normal.hunterLead).toBeLessThanOrEqual(hard.hunterLead);
+		expect(easy.hunterDamage).toBeLessThan(normal.hunterDamage);
+		expect(normal.hunterDamage).toBeLessThan(hard.hunterDamage);
 	});
 
 	it("are slower thieves on easy", () => {
@@ -373,6 +391,36 @@ describe("hunters", () => {
 			if (loop.scene.some(entity => entity instanceof Shot && entity.owner == hunter)) { firstShotFrom = vec3.distance(hunter.position, player.position); }
 		}
 		expect(firstShotFrom).toBeLessThanOrEqual(FIRE_RANGE);
+	});
+
+	it("aim where a moving player will be by the time the shot gets there, as far as the difficulty says", async () => {
+		const { player, hunter } = await face(-90); /* standing still: the shot flies at the gun's 90 m/s, for a second */
+		vec3.set(player.velocity, STRAFE_SPEED, 0, 0);
+		const ahead = STRAFE_SPEED * (1 + hunter.steeringLag); /* and the nose trails a moving point */
+
+		expect(hunter.aimPoint(player, 0)[0]).toBe(0);
+		expect(hunter.aimPoint(player, 1)[0]).toBeCloseTo(ahead, 1);
+		expect(hunter.aimPoint(player, 0.5)[0]).toBeCloseTo(ahead / 2, 1);
+	});
+
+	/** In range, strafing steadily across the hunter's nose */
+	async function strafing(lead: number): Promise<Ship> {
+		const { loop, player } = await face(-60);
+		loop.difficulty = { ...DIFFICULTIES.normal, hunterLead: lead };
+		const { strafe } = player.engine;
+		strafe.limit = strafe.value = strafe.target = STRAFE_SPEED;
+		run(loop, 2);
+		return player;
+	}
+
+	it("hit a player strafing across their nose by aiming ahead", async () => {
+		const player = await strafing(1);
+		expect(player.shields.value).toBeLessThan(player.shields.max);
+	});
+
+	it("miss a player strafing across their nose when they aim where the player is", async () => {
+		const player = await strafing(0);
+		expect(player.shields.value).toBe(player.shields.max);
 	});
 
 	it("cannot hit pods in the line of fire", async () => {

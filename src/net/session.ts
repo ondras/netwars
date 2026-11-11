@@ -363,7 +363,7 @@ export class OnlineSession {
 		const { ship } = this;
 		if (ship.dead && !this.hits.length) { return; } /* until there is a new ship; shots can still land */
 
-		const { speed, yaw, pitch } = ship.engine;
+		const { speed, strafe, yaw, pitch } = ship.engine;
 		const q = ship.orientation;
 		this.send({
 			type: "state",
@@ -373,6 +373,7 @@ export class OnlineSession {
 					q: [round(q[0], 4), round(q[1], 4), round(q[2], 4), round(q[3], 4)],
 					speed: round(speed.value, 2),
 					target: speed.target,
+					strafe: round(strafe.value, 2),
 					yaw: round(yaw.control, 3),
 					pitch: round(pitch.control, 3),
 				},

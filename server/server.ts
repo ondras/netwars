@@ -7,6 +7,7 @@ import { WebSocket, WebSocketServer, type RawData } from "ws";
 import { isDifficultyLevel } from "../src/difficulty.ts";
 import { DEFAULT_LOOK, isLook } from "../src/entity/player-ships.ts";
 import { LEVELS } from "../src/levels.ts";
+import { isMechanics } from "../src/mechanics.ts";
 import {
 	CLOSE_REPLACED, FRAG_LIMITS, GAME_MODES, HEARTBEAT, NET_PATH, SILENCE_LIMIT, TIME_LIMITS,
 	type ClientMessage, type GameMode, type RoomSetup, type ServerMessage,
@@ -162,7 +163,7 @@ function connect(socket: WebSocket, rooms: Rooms): void {
 				leave();
 				client.name = cleanName(String(message.name ?? ""));
 				if (isLook(message.look)) { client.look = message.look; }
-				client.room = rooms.create(client, message.level, message.difficulty);
+				client.room = rooms.create(client, message.level, message.difficulty, isMechanics(String(message.mechanics)) ? message.mechanics : "classic");
 				if (!client.room) { return error("The server is full. Try again later."); }
 				client.room.welcome(client);
 			} break;

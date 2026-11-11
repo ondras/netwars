@@ -96,7 +96,7 @@ type Row = number[];
 const positionOf = (row: Row) => vec3.fromValues(row[1], row[2], row[3]);
 function velocityOf(row: Row): vec3 {
 	const q = quat.fromValues(row[4], row[5], row[6], row[7]);
-	return vec3.transformQuat(vec3.create(), vec3.fromValues(0, 0, -row[9]), q);
+	return vec3.transformQuat(vec3.create(), vec3.fromValues(row[13] ?? 0, 0, -row[9]), q);
 }
 
 export function analyze(entries: readonly LogEntry[]): PilotStats[] {

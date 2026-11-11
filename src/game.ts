@@ -1,7 +1,7 @@
 import { mat4, quat, vec3 } from "gl-matrix";
 import { SoundPlayer } from "./audio/player.ts";
 import { Camera } from "./camera.ts";
-import { DIFFICULTIES, difficulty, difficultyLevel, type DifficultyLevel } from "./difficulty.ts";
+import { difficulty, difficultyLevel, difficultyOf, type DifficultyLevel } from "./difficulty.ts";
 import type { Entity } from "./entity/entity.ts";
 import { Hunter } from "./entity/hunter.ts";
 import { Pirate } from "./entity/pirate.ts";
@@ -12,6 +12,7 @@ import { EnemySpawner, PowerupSpawner } from "./entity/spawner.ts";
 import { enemyWaves, LEVELS, levelOutcome, POD_FIELD, type EnemyKind, type Outcome } from "./levels.ts";
 import { TargetLock } from "./lock.ts";
 import { DEFAULT_RULES, Loop } from "./loop.ts";
+import { mechanics, type Mechanics } from "./mechanics.ts";
 import { RESPAWN_DELAY, type ClientMessage, type MatchResult, type OutcomeMessage, type PlayerInfo, type Snapshot, type StartMessage } from "./net/protocol.ts";
 import { OnlineSession } from "./net/session.ts";
 import { IdlePilot, PlayerPilot, type Pilot } from "./pilot.ts";
@@ -51,6 +52,7 @@ export interface LevelResult {
 	/** Shield points left */
 	shields: number;
 	difficulty: DifficultyLevel;
+	mechanics: Mechanics;
 	/** Played online, with others */
 	online: boolean;
 	/** How a deathmatch ended */
@@ -60,6 +62,7 @@ export interface LevelResult {
 interface Session {
 	level: number;
 	difficulty: DifficultyLevel;
+	mechanics: Mechanics;
 	ship: Ship;
 	outcome: Outcome | null;
 	/** Playing alone: the level's enemies and pods are here */
@@ -171,7 +174,7 @@ export class Game {
 		this.stop();
 		this.sounds.unlock();
 		const config = LEVELS[level];
-		const ship = this.createShip();
+		const ship = this.createShip(mechanics());
 
 		const pods = Array.from({ length: config.pods }, () => {
 			const pod = new Pod();
@@ -190,7 +193,7 @@ export class Game {
 		scene.push(ship, ...pods, enemies);
 		if (config.powerups) { scene.push(new PowerupSpawner(players, config.powerups)); }
 
-		this.begin({ level, difficulty: difficultyLevel(), ship, outcome: null, local: { enemies, pods }, online: null });
+		this.begin({ level, difficulty: difficultyLevel(), mechanics: mechanics(), ship, outcome: null, local: { enemies, pods }, online: null });
 	}
 
 	/** Which of the room's levels is being played online (StartMessage.run), if one is */
@@ -209,11 +212,11 @@ export class Game {
 		this.loop.size = start.arena?.size ?? null;
 		this.scene.limitedSight = this.hud.limitedRadar = this.sounds.limitedHearing = start.arena !== null;
 		this.scene.dust = start.arena !== null;
-		const ship = this.createShip(start.arena ? isOpponent : isRocketTarget);
+		const ship = this.createShip(start.mechanics, start.arena ? isOpponent : isRocketTarget);
 		vec3.set(ship.position, ...start.spawn);
 		quat.set(ship.orientation, ...start.facing);
 		ship.rockets = start.rockets;
-		this.loop.difficulty = DIFFICULTIES[start.difficulty];
+		this.loop.difficulty = difficultyOf(start.difficulty, start.mechanics);
 		if (start.alive) {
 			this.loop.scene.push(ship);
 		} else {
@@ -223,7 +226,7 @@ export class Game {
 		const online = new OnlineSession(this.loop, send, start, me, ship);
 		online.onFrag = (killer, victim) => this.tellFrag(killer, victim);
 		this.loop.rules = online.rules;
-		this.begin({ level: start.level, difficulty: start.difficulty, ship, outcome: null, local: null, online });
+		this.begin({ level: start.level, difficulty: start.difficulty, mechanics: start.mechanics, ship, outcome: null, local: null, online });
 	}
 
 	receive(snapshot: Snapshot): void {
@@ -259,8 +262,8 @@ export class Game {
 	}
 
 	/** Your ship: flown from the cockpit, so never drawn */
-	private createShip(isTarget: (entity: Entity) => boolean = isRocketTarget): PlayerShip {
-		const ship = new PlayerShip(shipLook());
+	private createShip(mechanics: Mechanics, isTarget: (entity: Entity) => boolean = isRocketTarget): PlayerShip {
+		const ship = new PlayerShip(shipLook(), mechanics);
 		ship.visible = false;
 		ship.setPilot(this.pilot);
 		ship.rockets = ROCKET_CAPACITY; /* a full rack every level */
@@ -412,6 +415,7 @@ export class Game {
 			destroyed,
 			shields: (session.ship.dead ? 0 : session.ship.shields.value),
 			difficulty: session.difficulty,
+			mechanics: session.mechanics,
 			online: session.online !== null,
 			...(match ? { match } : {}),
 		});

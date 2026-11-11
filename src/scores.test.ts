@@ -76,6 +76,18 @@ describe("Leaderboard", () => {
 		expect(next.add("Pirates", 200, "normal")!.name).toBe("Ace");
 	});
 
+	it("remembers the mechanics of a score, classic for scores saved before there was a choice", () => {
+		const old = { id: "a", name: "Old", score: 500, difficulty: "normal", date: "" };
+		const store = memoryStore({ "netwars.scores": JSON.stringify({ Pirates: [old, { ...old, id: "b", mechanics: "warp" }] }) });
+		const visit = new Leaderboard(store);
+		expect(visit.entries("Pirates")).toEqual([old]); /* not a mechanics there is */
+		visit.add("Pirates", 300, "hard", "modern");
+
+		const next = new Leaderboard(store);
+		expect(next.entries("Pirates").map(({ mechanics }) => mechanics)).toEqual([undefined, "modern"]);
+		expect(next.add("Pirates", 200, "normal")!.mechanics).toBe("classic");
+	});
+
 	it("shortens long names and falls back to a default for empty ones", () => {
 		const board = new Leaderboard(memoryStore());
 		const entry = board.add("Pirates", 100, "normal")!;
