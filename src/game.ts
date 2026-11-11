@@ -183,8 +183,9 @@ export class Game {
 
 		const { scene, players } = this.loop;
 		this.loop.difficulty = difficulty();
-		const waves = enemyWaves(config, 1, difficulty().thieves);
-		const enemies = new EnemySpawner(players, waves.enemies, { max: waves.max, interval: waves.interval });
+		const { thieves, burst } = difficulty();
+		const waves = enemyWaves(config, 1, thieves, burst);
+		const enemies = new EnemySpawner(players, waves.enemies, { max: waves.max, interval: waves.interval, group: waves.group, rest: waves.rest });
 
 		scene.push(ship, ...pods, enemies);
 		if (config.powerups) { scene.push(new PowerupSpawner(players, config.powerups)); }

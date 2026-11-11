@@ -8,7 +8,7 @@ import { Missile } from "./entity/missile.ts";
 import { ESCAPE_RADIUS, Pirate } from "./entity/pirate.ts";
 import { Pod } from "./entity/pod.ts";
 import { Ship } from "./entity/ship.ts";
-import { APPROACH_ANGLES, EnemySpawner, pickWeighted, type Approach } from "./entity/spawner.ts";
+import { APPROACH_ANGLES, BURST_GAP, EnemySpawner, pickWeighted, type Approach, type EnemySpawnerOptions } from "./entity/spawner.ts";
 import { triangle } from "./geometry.ts";
 import { Loop } from "./loop.ts";
 import { settle, stubModels } from "./testing.ts";
@@ -333,5 +333,75 @@ describe("pirates", () => {
 
 		run(loop, 1);
 		expect(pirates()).toHaveLength(2);
+	});
+
+	describe("in groups", () => {
+		function groups(options: Partial<EnemySpawnerOptions>, player = absentPlayer()): { loop: Loop; spawner: EnemySpawner; pirates: () => Pirate[]; destroyAll: () => void } {
+			const loop = new Loop();
+			const spawner = new EnemySpawner(player, Array<"pirate">(9).fill("pirate"), { firstDelay: 0, interval: 30, group: 2, rest: 10, max: 4, ...options });
+			loop.scene.push(spawner);
+			const pirates = () => loop.scene.filter((entity): entity is Pirate => entity instanceof Pirate);
+			const destroyAll = () => { for (const pirate of pirates()) { explode(pirate, loop); } };
+			return { loop, spawner, pirates, destroyAll };
+		}
+
+		it("come a moment apart, and the next group only after a pause once all are gone", () => {
+			const { loop, pirates, destroyAll } = groups({});
+			run(loop, 0.1);
+			expect(pirates()).toHaveLength(1);
+			run(loop, BURST_GAP);
+			expect(pirates()).toHaveLength(2);
+			run(loop, 5);
+			expect(pirates()).toHaveLength(2); /* the group is all there */
+
+			destroyAll();
+			run(loop, 10 - 0.5);
+			expect(pirates()).toHaveLength(0); /* time to collect powerups */
+			run(loop, 1);
+			expect(pirates()).toHaveLength(1);
+		});
+
+		it("all come even if the first is shot down before the second arrives", () => {
+			const { loop, pirates, destroyAll } = groups({});
+			run(loop, 0.1);
+			destroyAll();
+			run(loop, BURST_GAP + 0.1);
+			expect(pirates()).toHaveLength(1);
+		});
+
+		it("wait for room when as many as allowed are about", () => {
+			const { loop, pirates } = groups({ group: 3, max: 2 });
+			run(loop, 3 * BURST_GAP + 1);
+			expect(pirates()).toHaveLength(2);
+
+			explode(pirates()[0], loop);
+			run(loop, 0.1);
+			expect(pirates()).toHaveLength(2); /* the third of the group, in the place of the one gone */
+		});
+
+		it("come anyway, as there is room, when the last group is still about after a long while", () => {
+			const { loop, spawner, pirates } = groups({ interval: 5 }); /* 10 s for a group of two */
+			run(loop, BURST_GAP + 0.1);
+			expect(pirates()).toHaveLength(2);
+			run(loop, 10);
+			expect(pirates().length).toBeGreaterThan(2);
+			expect(spawner.fallbacks).toBe(1);
+		});
+
+		it("wait while every pilot is destroyed", () => {
+			const player = absentPlayer();
+			const { loop, pirates, destroyAll } = groups({}, player);
+			run(loop, BURST_GAP + 0.1);
+			destroyAll();
+			player.dead = true;
+			run(loop, 20);
+			expect(pirates()).toHaveLength(0);
+
+			player.dead = false;
+			run(loop, 10 - 0.5);
+			expect(pirates()).toHaveLength(0); /* the whole pause still to come */
+			run(loop, 1);
+			expect(pirates()).toHaveLength(1);
+		});
 	});
 });

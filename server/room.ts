@@ -516,8 +516,9 @@ export class Room {
 			vec3.set(pod.position, (Math.random() - 0.5) * 2 * POD_FIELD, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 2 * POD_FIELD);
 			return pod;
 		});
-		const waves = enemyWaves(config, this.members.length, DIFFICULTIES[this.difficulty].thieves);
-		const enemies = new EnemySpawner(loop.players, waves.enemies, { max: waves.max, interval: waves.interval });
+		const { thieves, burst } = DIFFICULTIES[this.difficulty];
+		const waves = enemyWaves(config, this.members.length, thieves, burst);
+		const enemies = new EnemySpawner(loop.players, waves.enemies, { max: waves.max, interval: waves.interval, group: waves.group, rest: waves.rest });
 		loop.scene.push(...loop.players, ...pods, enemies);
 		if (config.powerups) { loop.scene.push(new PowerupSpawner(loop.players, config.powerups)); }
 		return { ...level, enemies, pods, match: null };

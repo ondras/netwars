@@ -76,7 +76,7 @@ describe("enemy waves", () => {
 
 	it("are the level as it is for one pilot and the usual share of thieves", () => {
 		for (const level of LEVELS) {
-			expect(enemyWaves(level, 1, 1), level.name).toEqual({ enemies: level.enemies, max: level.maxEnemies, interval: level.enemyInterval });
+			expect(enemyWaves(level, 1, 1), level.name).toEqual({ enemies: level.enemies, max: level.maxEnemies, interval: level.enemyInterval, group: 1, rest: level.enemyInterval });
 		}
 	});
 
@@ -94,6 +94,18 @@ describe("enemy waves", () => {
 
 		const fewer = enemyWaves(LEVELS[0], 1, 0.1);
 		expect(fewer.enemies).toEqual(["pirate"]); /* never none */
+	});
+
+	it("come in groups of `burst` for each pilot, as many as fit at once, with the level's own pause between, whatever the number of pilots", () => {
+		const [pirates, , hunters, , crossfire] = LEVELS;
+		expect(enemyWaves(crossfire, 1, 1, 2)).toMatchObject({ group: 2, rest: crossfire.enemyInterval });
+		expect(enemyWaves(crossfire, 1, 1, 5).group).toBe(crossfire.maxEnemies);
+		const team = enemyWaves(hunters, 2, 1, 2);
+		expect(team.group).toBe(Math.min(2 * 2, team.max)); /* two each, within what may be about at once */
+		expect(team.group).toBeGreaterThan(2);
+		expect(team.rest).toBe(hunters.enemyInterval);
+		expect(enemyWaves(pirates, 1, 1, 2).group).toBe(1); /* one at a time there: no groups */
+		expect(enemyWaves(crossfire, 3, 1, 1).group).toBe(1);
 	});
 
 	it("bring more of every kind for more pilots: as many fighters for each, and more thieves", () => {

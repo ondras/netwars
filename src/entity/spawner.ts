@@ -29,8 +29,12 @@ export interface EnemySpawnerOptions {
 	max: number;
 	/** Before the first enemy (s) */
 	firstDelay: number;
-	/** Between enemies, counted while below max (s) */
+	/** Between enemies, counted while below max (s); with groups, how long after a whole group came the next comes anyway, per enemy in it */
 	interval: number;
+	/** Enemies that come together, BURST_GAP apart; 1: one at a time, every `interval` */
+	group: number;
+	/** With groups: the pause after every enemy is gone, before the next group (s): time to collect powerups */
+	rest: number;
 	/** Enemies never appear closer than this to the player, horizontally (m) */
 	minDistance: number;
 	/** How far beyond the far edge of the pod field pirates appear (m) */
@@ -45,11 +49,16 @@ const ENEMY_DEFAULTS: EnemySpawnerOptions = {
 	max: 2,
 	firstDelay: 5,
 	interval: 20,
+	group: 1,
+	rest: 20,
 	minDistance: 120,
 	behind: 40,
 	spread: 0.35,
 	approaches: { "beyond-pods": 0.45, side: 0.4, behind: 0.15 },
 };
+
+/** Between the arrivals of a group's enemies (s) */
+export const BURST_GAP = 1.5;
 
 const degrees = (angle: number) => angle * Math.PI / 180;
 
@@ -63,7 +72,9 @@ export const APPROACH_ANGLES: Record<Exclude<Approach, "beyond-pods">, readonly 
 };
 
 /**
- * Invisible scene member that sends in a level's enemies in order.
+ * Invisible scene member that sends in a level's enemies in order: one at a time, or in groups (`group` > 1) of enemies
+ * BURST_GAP apart (waiting for room when `max` are about), the next group `rest` after every enemy is gone, or, if some are
+ * still about, `interval` per enemy of the group after the whole group came, as soon as there is room.
  * Pirates take one of the approaches at random and head for the pods;
  * hunters arrive anywhere at minDistance from the player, facing them.
  * With several players, each enemy is placed by one of them still alive, picked at random.
@@ -77,6 +88,13 @@ export class EnemySpawner extends Entity {
 	/** Every enemy sent in so far, dead or alive */
 	private readonly sent: Array<{ kind: EnemyKind; ship: Ship }> = [];
 	private timer: number;
+	/**
+	 * Groups: enemies of the group still to come and the time to the next of them (s); the pause before the next group, once
+	 * every enemy is gone, or null while some are about (s); and the time before the next group comes anyway (s)
+	 */
+	private readonly groups = { left: 0, gap: 0, rest: null as number | null, fallback: 0 };
+	/** Groups that came while enemies of the one before were still about */
+	fallbacks = 0;
 
 	/** @param players One ship or a list kept up to date by the caller */
 	constructor(players: Ship | readonly Ship[], enemies: readonly EnemyKind[], options: Partial<EnemySpawnerOptions> = {}) {
@@ -86,6 +104,7 @@ export class EnemySpawner extends Entity {
 		this.queue = [...enemies];
 		this.options = { ...ENEMY_DEFAULTS, ...options };
 		this.timer = this.options.firstDelay;
+		this.groups.rest = this.options.firstDelay; /* the first group after firstDelay, as if after a pause */
 	}
 
 	/** Enemies not yet sent in plus those still present */
@@ -107,14 +126,56 @@ export class EnemySpawner extends Entity {
 	}
 
 	override update(dt: number, world: World): void {
+		if (this.options.group > 1) {
+			this.updateGroups(dt, world);
+			return;
+		}
 		if (!this.queue.length || this.present >= this.options.max) { return; }
 
 		this.timer -= dt;
 		if (this.timer > 0) { return; }
 		this.timer = this.options.interval;
 
+		if (!this.players.some(player => !player.dead)) { return; }
+		this.send(world);
+	}
+
+	private updateGroups(dt: number, world: World): void {
+		const { groups, options } = this;
+		if (!this.queue.length || !this.players.some(player => !player.dead)) { return; } /* nobody to send them at: everything waits */
+
+		if (groups.left > 0) { /* the group still coming: one by one, as there is room */
+			groups.gap -= dt;
+			if (groups.gap <= 0 && this.present < options.max) {
+				this.send(world);
+				groups.left--;
+				groups.gap = BURST_GAP;
+			}
+			return;
+		}
+
+		if (!this.present) { /* all gone: a pause, then the next group */
+			groups.rest ??= options.rest;
+			groups.rest -= dt;
+			if (groups.rest <= 0) { this.startGroup(); }
+			return;
+		}
+		groups.rest = null;
+		groups.fallback -= dt;
+		if (groups.fallback <= 0 && this.present < options.max) { /* some still about, and too long: the next comes anyway */
+			this.fallbacks++;
+			this.startGroup();
+		}
+	}
+
+	private startGroup(): void {
+		const { groups, options } = this;
+		Object.assign(groups, { left: Math.min(options.group, this.queue.length), gap: 0, rest: null, fallback: options.interval * options.group });
+	}
+
+	/** The next enemy in the queue, placed by one of the players still alive */
+	private send(world: World): void {
 		const alive = this.players.filter(player => !player.dead);
-		if (!alive.length) { return; }
 		this.player = alive[Math.floor(Math.random() * alive.length)];
 
 		const kind = this.queue.shift()!;

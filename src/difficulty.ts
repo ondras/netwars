@@ -16,6 +16,11 @@ export interface Difficulty {
 	readonly thieves: number;
 	/** How fast pod thieves fly, as a multiple of their own speed */
 	readonly thiefSpeed: number;
+	/**
+	 * Enemies that come together, a moment apart, for each pilot (as many as the level allows at once); the next group comes
+	 * after a pause once all are gone. 1: one at a time, as they always came
+	 */
+	readonly burst: number;
 }
 
 /*
@@ -23,11 +28,17 @@ export interface Difficulty {
  * Alone, a bot that reacts like the user (COOP_PILOTS.person) never dies on easy and loses about 0.2 pods a level; on normal it loses
  * about 0.9 and dies about twice in each of the last two levels, never in the first two. A quicker one (COOP_PILOTS.ace) loses
  * about 1.1 on hard, 2.7 in the last level, dying about as often as the other on normal.
+ *
+ * Retuned on 2026-11-11 for enemies in groups (burst): with the pause after each group the bots died less (person, normal: about
+ * 0.5 deaths less in levels 5 and 6; ace, hard: the same), so hunterDamage went up until they die about as often as when enemies
+ * came one at a time: normal 10 → 13 (60 runs on levels 3-4, 140 on 5-6: within 0.15 deaths in levels 3-5, but 0.45 more in
+ * level 6, where a gunship's shot now takes a quarter of the shields rather than a fifth; 15 was no closer), hard 12 → 15 (30 and
+ * 60 runs: within 0.2; 17 was 0.4-0.65 over). Pods are lost a little more often, thieves coming together.
  */
 export const DIFFICULTIES = {
-	easy: { label: "Easy", missileDamage: 8, missileTurnRate: 1.6, missileInterval: [6, 10], hunterDamage: 3, thieves: 0.75, thiefSpeed: 0.6 },
-	normal: { label: "Normal", missileDamage: 9, missileTurnRate: 2, missileInterval: [4, 8], hunterDamage: 10, thieves: 1, thiefSpeed: 1 },
-	hard: { label: "Hard", missileDamage: 9, missileTurnRate: 2.5, missileInterval: [3, 6], hunterDamage: 12, thieves: 1.75, thiefSpeed: 1 },
+	easy: { label: "Easy", missileDamage: 8, missileTurnRate: 1.6, missileInterval: [6, 10], hunterDamage: 3, thieves: 0.75, thiefSpeed: 0.6, burst: 1 },
+	normal: { label: "Normal", missileDamage: 9, missileTurnRate: 2, missileInterval: [4, 8], hunterDamage: 13, thieves: 1, thiefSpeed: 1, burst: 2 },
+	hard: { label: "Hard", missileDamage: 9, missileTurnRate: 2.5, missileInterval: [3, 6], hunterDamage: 15, thieves: 1.75, thiefSpeed: 1, burst: 3 },
 } as const satisfies Record<string, Difficulty>;
 
 export type DifficultyLevel = keyof typeof DIFFICULTIES;
