@@ -4,9 +4,10 @@ import { join } from "node:path";
 /** One line of a recording, in the order things happened */
 export type LogEntry =
 	/** The match: who is in it (`bot`: not a person) and the side of the cube it is fought in */
-	| { k: "start"; time: string; room: string; run: number; mode: string; size: number | null; pilots: Array<{ id: number; name: string; bot: boolean; look: number }> }
+	| { k: "start"; time: string; room: string; run: number; mode: string; mechanics: string; size: number | null; pilots: Array<{ id: number; name: string; bot: boolean; look: number }> }
 	/**
-	 * Every ship flying, about 22 times a second: [pilot, x, y, z, qx, qy, qz, qw, shields, speed, speed asked for, yaw stick, pitch stick];
+	 * Every ship flying, about 22 times a second: [pilot, x, y, z, qx, qy, qz, qw, shields, speed, speed asked for, yaw stick, pitch stick,
+	 * sideways speed (positive to the right; missing from recordings older than strafing)];
 	 * in co-op also every enemy: [enemy, x, y, z, shields, 1 when carrying a pod]
 	 */
 	| { k: "f"; t: number; s: number[][]; e?: number[][] }

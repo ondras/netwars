@@ -2,7 +2,7 @@ import { quat, vec3, type ReadonlyVec3 } from "gl-matrix";
 import type { SoundName } from "../src/audio/sounds.ts";
 import { BotPilot, botTraits, type BotTraits } from "../src/bot.ts";
 import { resolveCollisions, resolveHits } from "../src/collision.ts";
-import { DIFFICULTIES, type DifficultyLevel } from "../src/difficulty.ts";
+import { difficultyOf, type DifficultyLevel } from "../src/difficulty.ts";
 import { explode } from "../src/entity/debris.ts";
 import type { Entity } from "../src/entity/entity.ts";
 import { Missile } from "../src/entity/missile.ts";
@@ -16,6 +16,7 @@ import { Shot } from "../src/entity/shot.ts";
 import { EnemySpawner, PowerupSpawner } from "../src/entity/spawner.ts";
 import { ENEMY_KINDS, enemyWaves, LEVELS, levelOutcome, POD_FIELD, type EnemyKind, type Outcome } from "../src/levels.ts";
 import { Loop } from "../src/loop.ts";
+import type { Mechanics } from "../src/mechanics.ts";
 import { extraOf, kindIndex, kindOf } from "../src/net/kinds.ts";
 import {
 	arenaSizeFor, DEFAULT_FRAG_LIMIT, DEFAULT_TIME_LIMIT, MAX_PLAYERS, MIN_ARENA_SIZE, RECONNECT_GRACE, RESPAWN_DELAY, round, SNAPSHOT_STEPS,
@@ -64,14 +65,19 @@ const isFriendly = (target: Entity): boolean => target instanceof PlayerShip || 
 /** Co-op: a player's shot passes through teammates and their rockets */
 const spareTeammates = (shot: Shot, target: Entity): boolean => shot.owner instanceof PlayerShip && isFriendly(target);
 
-/** Flies a player's ship between reports with the controls last reported; the ship does not fire (browsers do) */
+/**
+ * Flies a player's ship between reports with the controls last reported; the ship does not fire (browsers do).
+ * It keeps strafing as fast as last reported: strafe keys are held, and the speed changes within a fraction of a second.
+ */
 class RemotePilot implements Pilot {
 	target = 0;
+	strafe = 0;
 	yaw = 0;
 	pitch = 0;
 
 	update(_dt: number, ship: Ship): void {
 		ship.engine.speed.target = this.target;
+		ship.engine.strafe.target = this.strafe;
 		ship.engine.yaw.control = this.yaw;
 		ship.engine.pitch.control = this.pitch;
 		ship.trigger = false;
@@ -79,7 +85,7 @@ class RemotePilot implements Pilot {
 
 	/** Flying a new ship: hands off until the browser says otherwise */
 	reset(): void {
-		this.target = this.yaw = this.pitch = 0;
+		this.target = this.strafe = this.yaw = this.pitch = 0;
 	}
 }
 
@@ -142,7 +148,8 @@ const finiteList = (value: unknown, length: number): value is number[] =>
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const rounded = (v: ReadonlyVec3, digits = 2): [number, number, number] => [round(v[0], digits), round(v[1], digits), round(v[2], digits)];
 const validShip = (state: ShipState | undefined): state is ShipState => (finiteList(state?.p, 3) && finiteList(state.q, 4)
-	&& Math.hypot(...state.q) > 0.5 && finite(state.speed) && finite(state.target) && finite(state.yaw) && finite(state.pitch));
+	&& Math.hypot(...state.q) > 0.5 && finite(state.speed) && finite(state.target) && finite(state.yaw) && finite(state.pitch)
+	&& (state.strafe === undefined || finite(state.strafe)));
 const noneDestroyed = () => Object.fromEntries(ENEMY_KINDS.map(kind => [kind, 0])) as Record<EnemyKind, number>;
 
 /**
@@ -156,6 +163,8 @@ export class Room {
 	host: number;
 	levelIndex: number;
 	difficulty: DifficultyLevel;
+	/** The creator's pick: how ships fly here, and how enemies fight */
+	readonly mechanics: Mechanics;
 	mode: GameMode = "coop";
 	fragLimit: number = DEFAULT_FRAG_LIMIT;
 	timeLimit: number = DEFAULT_TIME_LIMIT;
@@ -182,8 +191,9 @@ export class Room {
 	private readonly pausedMembers = new Set<number>();
 	private readonly logs: MatchLogs | null;
 
-	constructor(code: string, host: Member, levelIndex: number, difficulty: DifficultyLevel, logs: MatchLogs | null = null) {
+	constructor(code: string, host: Member, levelIndex: number, difficulty: DifficultyLevel, logs: MatchLogs | null = null, mechanics: Mechanics = "classic") {
 		this.code = code;
+		this.mechanics = mechanics;
 		this.logs = logs;
 		this.host = host.id;
 		this.levelIndex = levelIndex;
@@ -199,6 +209,7 @@ export class Room {
 			mode: this.mode,
 			level: this.levelIndex,
 			difficulty: this.difficulty,
+			mechanics: this.mechanics,
 			fragLimit: this.fragLimit,
 			timeLimit: this.timeLimit,
 			state: this.state,
@@ -424,6 +435,7 @@ export class Room {
 			run: level.run,
 			level: level.index,
 			difficulty: level.difficulty,
+			mechanics: this.mechanics,
 			ships,
 			spawn: rounded(ship.position),
 			facing: [round(q[0], 4), round(q[1], 4), round(q[2], 4), round(q[3], 4)] as Quat,
@@ -453,7 +465,7 @@ export class Room {
 
 	/** A ship ready to fly, not in the scene yet */
 	private createShip(memberId: number, pilot: RemotePilot | BotPilot): PlayerShip {
-		const ship = new PlayerShip();
+		const ship = new PlayerShip(undefined, this.mechanics);
 		ship.rockets = ROCKET_CAPACITY; /* as the browsers start */
 		ship.setPilot(pilot);
 		this.pilots.set(ship, memberId);
@@ -466,7 +478,7 @@ export class Room {
 		const config = LEVELS[index];
 		const loop = new Loop();
 		loop.debris = false; /* nobody watches here */
-		loop.difficulty = DIFFICULTIES[this.difficulty];
+		loop.difficulty = difficultyOf(this.difficulty, this.mechanics);
 		if (deathmatch) { loop.size = arenaSizeFor(this.members.length); }
 		/* players' ships are moved by their browsers, which also handle their bumps */
 		loop.rules = (scene, world) => {
@@ -498,7 +510,7 @@ export class Room {
 		const run = ++this.runs;
 		const log = this.logs?.(this.code, run) ?? null;
 		log?.write({
-			k: "start", time: new Date().toISOString(), room: this.code, run, mode: this.mode, size: loop.size,
+			k: "start", time: new Date().toISOString(), room: this.code, run, mode: this.mode, mechanics: this.mechanics, size: loop.size,
 			pilots: this.members.map(({ id, name, bot, look }) => ({ id, name, bot: Boolean(bot), look })),
 		});
 		const level = {
@@ -516,8 +528,9 @@ export class Room {
 			vec3.set(pod.position, (Math.random() - 0.5) * 2 * POD_FIELD, (Math.random() - 0.5) * 5, (Math.random() - 0.5) * 2 * POD_FIELD);
 			return pod;
 		});
-		const waves = enemyWaves(config, this.members.length, DIFFICULTIES[this.difficulty].thieves);
-		const enemies = new EnemySpawner(loop.players, waves.enemies, { max: waves.max, interval: waves.interval });
+		const { thieves, burst } = loop.difficulty;
+		const waves = enemyWaves(config, this.members.length, thieves, burst);
+		const enemies = new EnemySpawner(loop.players, waves.enemies, { max: waves.max, interval: waves.interval, group: waves.group, rest: waves.rest });
 		loop.scene.push(...loop.players, ...pods, enemies);
 		if (config.powerups) { loop.scene.push(new PowerupSpawner(loop.players, config.powerups)); }
 		return { ...level, enemies, pods, match: null };
@@ -568,9 +581,11 @@ export class Room {
 	/** The ship goes where the browser says, if it can have flown there */
 	private fly({ ship, allowance }: Flyer, pilot: RemotePilot, state: ShipState): void {
 		if (!allowance.fly(ship, state.p, state.q)) { this.refused.moves++; }
-		const { limit } = ship.engine.speed;
-		ship.engine.speed.value = clamp(state.speed, -limit, limit);
-		vec3.transformQuat(ship.velocity, vec3.fromValues(0, 0, -ship.engine.speed.value * ship.thrust), ship.orientation);
+		const { speed, strafe } = ship.engine;
+		const { limit } = speed;
+		speed.value = clamp(state.speed, -limit, limit);
+		strafe.value = pilot.strafe = clamp(state.strafe ?? 0, -strafe.limit, strafe.limit);
+		ship.updateVelocity();
 		pilot.target = clamp(state.target, -limit, limit);
 		pilot.yaw = clamp(state.yaw, -1, 1);
 		pilot.pitch = clamp(state.pitch, -1, 1);
@@ -865,11 +880,12 @@ export class Room {
 		const s: number[][] = [];
 		for (const [id, { ship }] of level.flyers) {
 			if (ship.dead) { continue; }
-			const { speed, yaw, pitch } = ship.engine;
+			const { speed, strafe, yaw, pitch } = ship.engine;
 			const q = ship.orientation;
 			s.push([
 				id, ...rounded(ship.position), round(q[0], 4), round(q[1], 4), round(q[2], 4), round(q[3], 4),
 				Math.round(ship.shields.value), round(speed.value * ship.thrust, 2), round(speed.target, 2), round(yaw.control, 3), round(pitch.control, 3),
+				round(strafe.value * ship.thrust, 2),
 			]);
 		}
 		if (level.match) {

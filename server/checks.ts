@@ -11,7 +11,7 @@ import { TUMBLE_SPIN, type Ship } from "../src/entity/ship.ts";
 import { SHOT_RADIUS } from "../src/entity/shot.ts";
 import { angleOffNose, LOCK_RANGE } from "../src/lock.ts";
 import type { EntityRecord, Quat, ShotReport, Vec3 } from "../src/net/protocol.ts";
-import { Weapon } from "../src/weapon.ts";
+import { carriedVelocity, Weapon } from "../src/weapon.ts";
 import type { World } from "../src/world.ts";
 
 /** What players' guns do: the standard gun */
@@ -26,7 +26,7 @@ const BANK = 1;
 const MUZZLE_REACH = 6;
 /** How far a shot may point off the nose as last reported: the turning since (rad) */
 const AIM_CONE = 0.3;
-/** How much a shot's speed may differ from the gun's, relative to the ship as last reported (m/s) */
+/** How much a shot's speed may differ from the gun's, relative to the ship's forward motion as last reported (m/s) */
 const MUZZLE_SPEED_SLACK = 8;
 /** A rocket's target must be roughly ahead (rad); it can have moved since the pilot locked on, and more so up close */
 const ROCKET_CONE = Math.PI / 3;
@@ -140,7 +140,7 @@ export class Allowance {
 export function shotFits(ship: Ship, { p, v }: ShotReport): boolean {
 	if (vec3.distance(ship.position, p) > MUZZLE_REACH) { return false; }
 
-	const relative = vec3.subtract(vec3.create(), v, ship.velocity);
+	const relative = vec3.subtract(vec3.create(), v, carriedVelocity(ship));
 	const speed = vec3.length(relative);
 	if (Math.abs(speed - PLAYER_GUN.muzzleSpeed) > MUZZLE_SPEED_SLACK) { return false; }
 	return vec3.dot(relative, axisOf(ship)) / speed >= Math.cos(AIM_CONE);

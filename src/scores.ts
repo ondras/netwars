@@ -1,5 +1,6 @@
 import { DIFFICULTIES, isDifficultyLevel, type DifficultyLevel } from "./difficulty.ts";
 import type { EnemyKind } from "./levels.ts";
+import { isMechanics, type Mechanics } from "./mechanics.ts";
 
 /** Per pod left when the level is won */
 export const POD_POINTS = 100;
@@ -60,6 +61,8 @@ export interface Entry {
 	name: string;
 	readonly score: number;
 	readonly difficulty: DifficultyLevel;
+	/** Missing from scores saved before there was a choice: those are classic */
+	readonly mechanics?: Mechanics;
 	/** ISO date and time */
 	readonly date: string;
 }
@@ -90,7 +93,8 @@ function isEntry(value: unknown): value is Entry {
 	const entry = value as Entry;
 	return (typeof entry == "object" && entry !== null
 		&& typeof entry.id == "string" && typeof entry.name == "string" && typeof entry.date == "string"
-		&& Number.isFinite(entry.score) && isDifficultyLevel(String(entry.difficulty)));
+		&& Number.isFinite(entry.score) && isDifficultyLevel(String(entry.difficulty))
+		&& (entry.mechanics === undefined || isMechanics(String(entry.mechanics))));
 }
 
 /**
@@ -126,7 +130,7 @@ export class Leaderboard {
 	}
 
 	/** Save the score under the last name used, if it makes the board */
-	add(level: string, score: number, difficulty: DifficultyLevel): Entry | null {
+	add(level: string, score: number, difficulty: DifficultyLevel, mechanics: Mechanics = "classic"): Entry | null {
 		const rank = this.rankOf(level, score);
 		if (rank === null) { return null; }
 
@@ -135,6 +139,7 @@ export class Leaderboard {
 			name: this.name,
 			score,
 			difficulty,
+			mechanics,
 			date: new Date().toISOString(),
 		};
 		const entries = [...this.entries(level)];

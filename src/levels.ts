@@ -83,11 +83,16 @@ export const LEVELS: readonly LevelConfig[] = [
 	},
 ];
 
-/** How a level's enemies come: all of them in order, at most `max` at once, one every `interval` seconds while fewer are about */
+/**
+ * How a level's enemies come: all of them in order, at most `max` at once; one every `interval` seconds while fewer are about,
+ * or in groups of `group`, the next `rest` seconds after all are gone (EnemySpawner)
+ */
 export interface EnemyWaves {
 	readonly enemies: readonly EnemyKind[];
 	readonly max: number;
 	readonly interval: number;
+	readonly group: number;
+	readonly rest: number;
 }
 
 const isThief = (kind: EnemyKind) => kind == "pirate" || kind == "raider";
@@ -110,8 +115,10 @@ export function pilotPressure(pilots: number, kind: keyof typeof PILOT_PRESSURE)
  * More pilots get more of every kind (pilotPressure), and the thieves are then that many times as many. The other enemies keep
  * their places in the order, the level's own being gone through again from the start for more, and so do thieves.
  * With more enemies they come sooner and more at once, so that the level lasts about as long.
+ * In groups (`burst` > 1, Difficulty.burst), each pilot gets that many in a group, as many as fit within `max`; the pause after a
+ * group stays the level's own interval whatever the number of pilots, for collecting powerups.
  */
-export function enemyWaves(config: LevelConfig, pilots: number, thieves: number): EnemyWaves {
+export function enemyWaves(config: LevelConfig, pilots: number, thieves: number, burst = 1): EnemyWaves {
 	const all = Math.max(1, Math.round(config.enemies.length * pilotPressure(pilots, "fighters")));
 	const scaled = Array.from({ length: all }, (_, i) => config.enemies[i % config.enemies.length]);
 	const fighters = scaled.filter(kind => !isThief(kind));
@@ -131,7 +138,9 @@ export function enemyWaves(config: LevelConfig, pilots: number, thieves: number)
 	}
 
 	const more = count / config.enemies.length;
-	return { enemies, max: Math.max(1, Math.round(config.maxEnemies * more)), interval: config.enemyInterval / more };
+	const max = Math.max(1, Math.round(config.maxEnemies * more));
+	const group = (burst > 1 ? Math.min(max, Math.round(burst * pilotPressure(pilots, "fighters"))) : 1);
+	return { enemies, max, interval: config.enemyInterval / more, group, rest: config.enemyInterval };
 }
 
 /** "match-over": a deathmatch reached its frag or time limit */

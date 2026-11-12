@@ -9,6 +9,7 @@ import type { SoundName } from "../audio/sounds.ts";
 import type { DifficultyLevel } from "../difficulty.ts";
 import type { PowerupKind } from "../entity/powerup.ts";
 import type { EnemyKind, Outcome } from "../levels.ts";
+import type { Mechanics } from "../mechanics.ts";
 
 /** Where the server takes WebSocket connections */
 export const NET_PATH = "/net";
@@ -80,6 +81,8 @@ export interface RoomSetup {
 
 export interface RoomInfo extends RoomSetup {
 	code: string;
+	/** The creator's pick, for as long as the room is open */
+	mechanics: Mechanics;
 	/** Player id of the host, who picks the level and starts it */
 	host: number;
 	players: PlayerInfo[];
@@ -93,6 +96,8 @@ export interface ShipState {
 	/** Current and target speed (m/s) */
 	speed: number;
 	target: number;
+	/** Current sideways speed (m/s), positive to the right; missing from browsers older than strafing */
+	strafe?: number;
 	/** Steering, -1..1 */
 	yaw: number;
 	pitch: number;
@@ -124,7 +129,8 @@ export interface HitReport {
 }
 
 export type ClientMessage =
-	| { type: "create"; name: string; level: number; difficulty: DifficultyLevel; look?: number }
+	/** The room plays the creator's mechanics, classic when not given */
+	| { type: "create"; name: string; level: number; difficulty: DifficultyLevel; mechanics?: Mechanics; look?: number }
 	| { type: "join"; code: string; name: string; look?: number }
 	| { type: "name"; name: string }
 	/** Between levels: fly another ship, or the same one in other colours */
@@ -210,6 +216,7 @@ export interface StartMessage {
 	run: number;
 	level: number;
 	difficulty: DifficultyLevel;
+	mechanics: Mechanics;
 	/** Player id → id of their ship's entity */
 	ships: Record<number, number>;
 	/** Your ship: where it is, which way it faces, rockets left; not alive when it was destroyed */

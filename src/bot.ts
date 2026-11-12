@@ -1,5 +1,6 @@
 import { quat, vec3, type ReadonlyVec3 } from "gl-matrix";
 import type { Entity } from "./entity/entity.ts";
+import { Hunter } from "./entity/hunter.ts";
 import { Pirate } from "./entity/pirate.ts";
 import { PlayerShip } from "./entity/player-ship.ts";
 import { Pod } from "./entity/pod.ts";
@@ -8,7 +9,7 @@ import { ROCKET_CAPACITY, Ship } from "./entity/ship.ts";
 import { angleOffNose, TargetLock } from "./lock.ts";
 import type { Pilot } from "./pilot.ts";
 import { RADAR_REACH, senseFade, SIGHT_REACH } from "./senses.ts";
-import { Weapon } from "./weapon.ts";
+import { carriedVelocity, Weapon } from "./weapon.ts";
 import type { World } from "./world.ts";
 
 /**
@@ -51,6 +52,13 @@ export interface BotTraits {
 	readonly evasion: number;
 	/** How well it uses its speed, 0..1: holds a steady range behind a target, slows down to turn tighter */
 	readonly positioning: number;
+	/**
+	 * How likely it is to strafe out of the way, once in each pass of the ship it fights shooting at it, 0..1.
+	 * Like the user: it fires first, takes the other's fire for a moment, then slides aside for about a second, still firing.
+	 */
+	readonly strafing: number;
+	/** How long it lets the ship it fights have its nose on it before it strafes, on average (s) */
+	readonly strafeDelay: number;
 
 	/* Awareness */
 	/**
@@ -85,6 +93,8 @@ export function botTraits(aim = 0.5, flying = 0.5): BotTraits {
 		engageRange: scale(100, 170, 200, flying),
 		evasion: scale(0, 0, 0.8, flying),
 		positioning: scale(0, 0, 1, flying),
+		strafing: scale(0, 0.9, 1, flying),
+		strafeDelay: scale(1.5, 0.8, 0.4, flying),
 
 		attention: 0,
 	};
@@ -95,6 +105,7 @@ export function botTraits(aim = 0.5, flying = 0.5): BotTraits {
  * The person, like the user, takes 1.5 s to take in a new contact and launches a rocket 4 s after a lock, if ever:
  * with the ace it destroyed 25 % of the enemies, fired 38 shots a minute and hit with 11 %, against the user's 26 %, 37 and 12 %.
  */
+/* Their strafing (2026-11-09) is fitted to the user's 20 strafing games: about 0.8 strafes per hunter or gunship, ~1 s each, starting ~70 m away */
 export const COOP_PILOTS = {
 	ace: botTraits(),
 	person: { ...botTraits(), attention: 1.5, rocketDelay: 4 },
@@ -159,6 +170,17 @@ const TEAMMATE_WEIGHT = 2.5;
 /** Co-op, with no enemy about: it heads for points this far around the middle of the pods (m), a new one this often (s) */
 const PATROL_RADIUS = 40;
 const PATROL_TIME = 8;
+/** Strafing: the ship it fights is shooting at it with its nose this close to it (rad), from this close (m), if it shoots straight */
+const STRAFE_CONE = 0.25;
+const STRAFE_RANGE = 100;
+/** How long it lets that ship shoot before it strafes varies from pass to pass, by this share of strafeDelay either way */
+const STRAFE_DELAY_SPREAD = 0.5;
+/** A pass of that ship is over once it has not been shooting at it for this long (s); then it may strafe again */
+const REARM_TIME = 1;
+/** It strafes only having fired this recently (s): it shoots first, then slides out of the way */
+const FIRED_RECENTLY = 1;
+/** How long it holds the strafe key, at random between these (s); it slides on for a moment after letting go */
+const STRAFE_HOLD = [0.4, 1.1] as const;
 /** It starts firing somewhere between this share of fireRange and all of it, differently every fight */
 const FIRE_NEAREST = 0.7;
 /** The shortest a burst lasts, and the pause before the next (s) */
@@ -178,6 +200,17 @@ interface Seen {
 	readonly time: number;
 	readonly position: vec3;
 	readonly velocity: vec3;
+	readonly orientation: quat;
+}
+
+/** Does a ship that shoots straight have its nose on this point, as seen? Pirates' missiles home in, so strafing does nothing against them */
+function shootingAt(target: Ship, seen: Seen, from: ReadonlyVec3, point: ReadonlyVec3): boolean {
+	if (!(target instanceof Hunter || target instanceof PlayerShip)) { return false; }
+	const to = vec3.subtract(vec3.create(), point, from);
+	const distance = vec3.length(to);
+	if (distance > STRAFE_RANGE || distance == 0) { return false; }
+	const nose = vec3.transformQuat(vec3.create(), vec3.fromValues(0, 0, -1), seen.orientation);
+	return Math.acos(Math.max(-1, Math.min(1, vec3.dot(nose, to) / distance))) <= STRAFE_CONE;
 }
 
 const clamp = (value: number, limit = 1) => Math.max(-limit, Math.min(limit, value));
@@ -237,6 +270,16 @@ export class BotPilot implements Pilot {
 	private readonly shownAt = new Map<Entity, number>();
 	/** Phases of its aim's wandering */
 	private readonly phases: readonly number[];
+	/** The strafe key it holds: which side, and for how long more (s) */
+	private strafeSide = 0;
+	private strafeLeft = 0;
+	/**
+	 * The pass of the ship it fights: how long that has been shooting at it, since when not, how long it means to let it
+	 * this time, and whether it has made up its mind to strafe
+	 */
+	private readonly pass = { target: null as Ship | null, underFire: 0, clear: 0, delay: 0, decided: false };
+	/** When it last had the trigger down, by its own clock */
+	private firedAt = -Infinity;
 
 	constructor(traits: BotTraits, { coop = false, random = Math.random }: BotOptions = {}) {
 		this.traits = traits;
@@ -254,6 +297,9 @@ export class BotPilot implements Pilot {
 		this.breakLeft = this.evadeRest = this.throttleSteps = this.burstLeft = this.burstRest = this.lockedFor = this.rocketRest = this.headLeft = 0;
 		this.pursuing = this.noticed = false;
 		this.shownAt.clear();
+		this.strafeSide = this.strafeLeft = 0;
+		Object.assign(this.pass, { target: null, underFire: 0, clear: 0, delay: 0, decided: false });
+		this.firedAt = -Infinity;
 	}
 
 	update(dt: number, ship: Ship, world: World): void {
@@ -261,6 +307,9 @@ export class BotPilot implements Pilot {
 		this.look(dt, ship, world);
 		this.breakLeft = Math.max(0, this.breakLeft - dt);
 		this.evadeRest = Math.max(0, this.evadeRest - dt);
+		/* a strafe key once pressed is held for as long as it meant to, whatever else it does meanwhile */
+		this.strafeLeft = Math.max(0, this.strafeLeft - dt);
+		ship.engine.strafe.target = (this.strafeLeft > 0 ? this.strafeSide * ship.engine.strafe.limit : 0);
 
 		const { target } = this;
 		if (!target) {
@@ -269,6 +318,7 @@ export class BotPilot implements Pilot {
 			this.steerTowards(dt, ship, collect ?? this.search(dt, ship, world));
 			this.burstLeft = 0; /* nothing in sight to shoot at */
 			this.pullTrigger(dt, ship, false);
+			this.passClear(dt); /* the same ship back on its radar soon after is still the same pass */
 			return;
 		}
 		this.pursuing = false;
@@ -286,6 +336,7 @@ export class BotPilot implements Pilot {
 		if (this.engaged) { this.considerEvading(dt, ship, at, distance, offItsNose); }
 
 		let fire = false;
+		let fighting = false;
 		if (this.breakLeft > 0) {
 			this.steerTowards(dt, ship, this.breakTo);
 		} else if (!this.engaged) {
@@ -298,6 +349,7 @@ export class BotPilot implements Pilot {
 		} else {
 			const off = this.steerTowards(dt, ship, this.aimPoint(ship, world));
 			fire = (distance <= this.fireFrom && off <= this.traits.fireCone);
+			fighting = true;
 		}
 
 		if (!this.noticed) { this.burstLeft = 0; } /* what it does not see it does not shoot at, not even to finish a burst */
@@ -306,7 +358,47 @@ export class BotPilot implements Pilot {
 			this.burstLeft = 0;
 		}
 		this.pullTrigger(dt, ship, fire);
+		if (ship.trigger) { this.firedAt = this.time; }
+		if (ship.engine.strafe.limit > 0) { this.considerStrafing(dt, ship, world, target, fighting); } /* modern mechanics only */
 		this.launchRockets(dt, ship);
+	}
+
+	/**
+	 * Keeps track of the target's passes at it, as it sees them (late by `reaction`), and makes up its mind once in each:
+	 * having fired, and having taken the other's fire for strafeDelay, it may strafe to a random side
+	 * @param fighting Whether it is fighting the target right now, nose on it, rather than breaking off or turning to it
+	 */
+	private considerStrafing(dt: number, ship: Ship, world: World, target: Ship, fighting: boolean): void {
+		const { pass } = this;
+		if (pass.target != target) { Object.assign(pass, { target, underFire: 0, clear: 0, delay: this.strafeDelay(), decided: false }); }
+
+		const seen = this.seen[0];
+		const underFire = (seen !== undefined && shootingAt(target, seen, world.nearest(seen.position, ship.position), ship.position));
+		if (underFire) {
+			pass.underFire += dt;
+			pass.clear = 0;
+		} else {
+			this.passClear(dt);
+		}
+
+		/* only while it still sees the other shooting at it: the other turning away ends what there is to dodge */
+		if (!underFire || !fighting || pass.decided || this.strafeLeft > 0 || pass.underFire < pass.delay || this.time - this.firedAt > FIRED_RECENTLY) { return; }
+		pass.decided = true;
+		if (this.random() >= this.traits.strafing) { return; }
+		this.strafeSide = (this.random() < 0.5 ? -1 : 1);
+		this.strafeLeft = mix(STRAFE_HOLD[0], STRAFE_HOLD[1], this.random());
+	}
+
+	/** Time without the target's fire, the target out of sight or off the radar included: long enough, and that pass is over */
+	private passClear(dt: number): void {
+		const { pass } = this;
+		pass.clear += dt;
+		if (pass.clear >= REARM_TIME && (pass.underFire > 0 || pass.decided)) { Object.assign(pass, { underFire: 0, delay: this.strafeDelay(), decided: false }); }
+	}
+
+	/** How long it lets the other shoot before it strafes, this pass: about strafeDelay, differently every time */
+	private strafeDelay(): number {
+		return this.traits.strafeDelay * mix(1 - STRAFE_DELAY_SPREAD, 1 + STRAFE_DELAY_SPREAD, this.random());
 	}
 
 	/** Whether it sees the ship it is after: once noticed, it keeps it in sight within SIGHT_REACH; fading in and out of sight, now and then it may notice it */
@@ -444,7 +536,7 @@ export class BotPilot implements Pilot {
 			seen.length = 0;
 			return;
 		}
-		seen.push({ time: this.time, position: vec3.clone(target.position), velocity: vec3.clone(target.velocity) });
+		seen.push({ time: this.time, position: vec3.clone(target.position), velocity: vec3.clone(target.velocity), orientation: quat.clone(target.orientation) });
 		while (seen.length > 1 && seen[1].time <= this.time - this.traits.reaction) { seen.shift(); }
 	}
 
@@ -535,9 +627,9 @@ export class BotPilot implements Pilot {
 		const late = this.time - seen.time;
 		const at = vec3.clone(world.nearest(seen.position, ship.position));
 		const flight = vec3.distance(ship.position, at) / SHOT_SPEED;
-		/* the shot leaves with the ship's own velocity, so for the flight only the difference counts */
+		/* the shot leaves with the ship's own forward velocity, so for the flight only the difference counts */
 		vec3.scaleAndAdd(at, at, seen.velocity, (late + flight) * lead);
-		vec3.scaleAndAdd(at, at, ship.velocity, -flight * lead);
+		vec3.scaleAndAdd(at, at, carriedVelocity(ship), -flight * lead);
 		return at;
 	}
 

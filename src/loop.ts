@@ -116,7 +116,8 @@ export class Loop implements World {
 		const scene = this.scene;
 
 		for (const entity of scene) {
-			if (entity.simulated) { entity.update(dt, this); }
+			/* one destroyed since the last step (online: by a hit a browser reported) does nothing more, not even hold on to a pod */
+			if (entity.simulated && !entity.dead) { entity.update(dt, this); }
 		}
 		this.rules(scene, this);
 

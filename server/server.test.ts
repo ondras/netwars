@@ -67,6 +67,7 @@ describe("game server", () => {
 		const host = await Client.open();
 		host.send({ type: "create", name: "Ann", level: 0, difficulty: "normal", look: 5 });
 		const { room } = await host.next("welcome");
+		expect(room.mechanics).toBe("classic"); /* not said: classic */
 		expect(room.players[0].look).toBe(5);
 
 		host.send({ type: "look", look: 9999 });
@@ -81,9 +82,9 @@ describe("game server", () => {
 		const host = await Client.open();
 		const guest = await Client.open();
 
-		host.send({ type: "create", name: "  Ann  ", level: 0, difficulty: "hard" });
+		host.send({ type: "create", name: "  Ann  ", level: 0, difficulty: "hard", mechanics: "modern" });
 		const { room } = await host.next("welcome");
-		expect(room).toMatchObject({ difficulty: "hard", state: "lobby", players: [{ name: "Ann" }] });
+		expect(room).toMatchObject({ difficulty: "hard", mechanics: "modern", state: "lobby", players: [{ name: "Ann" }] });
 
 		guest.send({ type: "join", code: room.code.toLowerCase(), name: "Bo" });
 		const joined = await guest.next("welcome");

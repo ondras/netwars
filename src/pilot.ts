@@ -15,6 +15,12 @@ const SPEED_KEYS: Record<string, Direction> = {
 	KeyS: -1,
 };
 
+/** Strafe while held: left, right */
+const STRAFE_KEYS: Record<string, Direction> = {
+	KeyA: -1,
+	KeyD: 1,
+};
+
 /** Launch a rocket at the locked target */
 const LAUNCH_KEYS = new Set(["Enter", "NumpadEnter", "Space"]);
 
@@ -82,8 +88,8 @@ export class IdlePilot implements Pilot {
 	}
 
 	update(_dt: number, ship: Ship): void {
-		const { speed, yaw, pitch } = ship.engine;
-		speed.target = 0;
+		const { speed, strafe, yaw, pitch } = ship.engine;
+		speed.target = strafe.target = 0;
 		yaw.control = Math.min(1, this.turnRate / yaw.changeRate);
 		pitch.control = 0;
 		ship.trigger = false;
@@ -92,7 +98,8 @@ export class IdlePilot implements Pilot {
 
 /**
  * Mouse position over the given element steers, mouse button fires,
- * W/S change the target speed by SPEED_STEP per press (repeating while held), Enter or Space launches a rocket.
+ * W/S change the target speed by SPEED_STEP per press (repeating while held), A/D strafe while held,
+ * Enter or Space launches a rocket.
  */
 export class PlayerPilot implements Pilot, EventListenerObject {
 	private firing = false;
@@ -101,6 +108,8 @@ export class PlayerPilot implements Pilot, EventListenerObject {
 	private yaw = 0;
 	private pitch = 0;
 	private readonly throttle = new KeyRepeat();
+	/** Strafe keys held */
+	private readonly strafing = new Set<Direction>();
 
 	constructor(node: HTMLElement) {
 		node.addEventListener("mousemove", this);
@@ -115,14 +124,17 @@ export class PlayerPilot implements Pilot, EventListenerObject {
 	/** Drop input collected outside play (e.g. keys pressed in the menu) */
 	reset(): void {
 		this.throttle.reset();
+		this.strafing.clear();
 		this.firing = false;
 		this.launching = false;
 	}
 
 	update(dt: number, ship: Ship): void {
-		const { speed, yaw, pitch } = ship.engine;
+		const { speed, strafe, yaw, pitch } = ship.engine;
 		const target = speed.target + this.throttle.update(dt) * SPEED_STEP;
 		speed.target = Math.min(speed.limit, Math.max(-speed.limit, target));
+		/* both held: they cancel out */
+		strafe.target = strafe.limit * [...this.strafing].reduce((sum, direction) => sum + direction, 0);
 
 		yaw.control = this.yaw;
 		pitch.control = this.pitch;
@@ -160,16 +172,22 @@ export class PlayerPilot implements Pilot, EventListenerObject {
 
 				const direction = SPEED_KEYS[code];
 				if (direction) { this.throttle.press(direction); }
+				const side = STRAFE_KEYS[code];
+				if (side) { this.strafing.add(side); }
 				if (LAUNCH_KEYS.has(code)) { this.launching = true; }
 			} break;
 
 			case "keyup": {
-				const direction = SPEED_KEYS[(e as KeyboardEvent).code];
+				const { code } = e as KeyboardEvent;
+				const direction = SPEED_KEYS[code];
 				if (direction) { this.throttle.release(direction); }
+				const side = STRAFE_KEYS[code];
+				if (side) { this.strafing.delete(side); }
 			} break;
 
 			case "blur": /* keyup and mouseup are not delivered while the window is in the background */
 				this.throttle.releaseAll();
+				this.strafing.clear();
 				this.firing = false;
 			break;
 		}

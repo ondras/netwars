@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { KeyRepeat } from "./pilot.ts";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { PlayerShip } from "./entity/player-ship.ts";
+import { KeyRepeat, PlayerPilot } from "./pilot.ts";
 
 const STEP = 0.015;
 
@@ -55,5 +56,47 @@ describe("KeyRepeat", () => {
 		keys.press(-1);
 
 		expect(hold(keys, 1)).toBe(0);
+	});
+});
+
+describe("PlayerPilot", () => {
+	afterEach(() => { vi.unstubAllGlobals(); });
+
+	/** Without a browser: the window and the element only need to take listeners */
+	function setup(): { pilot: PlayerPilot; ship: PlayerShip; strafe: () => number } {
+		vi.stubGlobal("window", new EventTarget());
+		vi.stubGlobal("Element", class {});
+		const pilot = new PlayerPilot(new EventTarget() as HTMLElement);
+		const ship = new PlayerShip(undefined, "modern");
+		return { pilot, ship, strafe: () => { pilot.update(STEP, ship); return ship.engine.strafe.target; } };
+	}
+	const key = (type: "keydown" | "keyup", code: string) =>
+		({ type, code, target: null, repeat: false, metaKey: false, ctrlKey: false, altKey: false }) as unknown as Event;
+
+	it("strafes while A or D is held, and not with both", () => {
+		const { pilot, ship, strafe } = setup();
+		const { limit } = ship.engine.strafe;
+		expect(limit).toBeGreaterThan(0);
+		expect(strafe()).toBe(0);
+
+		pilot.handleEvent(key("keydown", "KeyD"));
+		expect(strafe()).toBe(limit);
+		pilot.handleEvent(key("keydown", "KeyA"));
+		expect(strafe()).toBe(0);
+		pilot.handleEvent(key("keyup", "KeyD"));
+		expect(strafe()).toBe(-limit);
+		pilot.handleEvent(key("keyup", "KeyA"));
+		expect(strafe()).toBe(0);
+	});
+
+	it("stops strafing when the window loses focus or play starts over", () => {
+		const { pilot, strafe } = setup();
+		pilot.handleEvent(key("keydown", "KeyD"));
+		pilot.handleEvent({ type: "blur" } as Event);
+		expect(strafe()).toBe(0);
+
+		pilot.handleEvent(key("keydown", "KeyA"));
+		pilot.reset();
+		expect(strafe()).toBe(0);
 	});
 });

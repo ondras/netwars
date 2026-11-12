@@ -1,6 +1,7 @@
 import { DIFFICULTIES, isDifficultyLevel, type DifficultyLevel } from "../difficulty.ts";
 import { lookName, shipGeometries } from "../entity/player-ships.ts";
 import type { LevelConfig } from "../levels.ts";
+import { MECHANICS } from "../mechanics.ts";
 import { shipIcon } from "../render/ship-icon.ts";
 import { CODE_LENGTH, FRAG_LIMITS, GAME_MODES, MAX_PLAYERS, TIME_LIMITS, type GameMode, type RoomInfo, type RoomSetup } from "./protocol.ts";
 
@@ -174,6 +175,7 @@ export class OnlineMenu {
 		element<HTMLElement>("lobby-count").textContent = `${room.players.length} of ${MAX_PLAYERS} pilots`;
 
 		this.modeSelect.value = room.mode;
+		element<HTMLElement>("lobby-mechanics").textContent = MECHANICS[room.mechanics].label;
 		this.levelSelect.value = String(room.level);
 		this.difficultySelect.value = room.difficulty;
 		this.fragSelect.value = String(room.fragLimit);

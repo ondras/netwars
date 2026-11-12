@@ -82,11 +82,27 @@ export class Hunter extends Ship {
 
 	override update(dt: number, world: World): void {
 		this.weapon.options.damage = world.difficulty.hunterDamage * this.damageFactor;
-		this.think(dt);
+		this.think(dt, world.difficulty.hunterLead);
 		super.update(dt, world);
 	}
 
-	private think(dt: number): void {
+	/**
+	 * Where to steer the nose for a shot to meet the player, if they fly on the same way: ahead of them by the shot's
+	 * flight, and by the steering lag, since the nose trails a moving point
+	 * @param lead Share of the way from where they are now to there, 0..1
+	 */
+	aimPoint(player: Ship, lead: number): vec3 {
+		/* the shot keeps this ship's forward speed (hunters do not strafe) */
+		const shotSpeed = this.weapon.options.muzzleSpeed + this.engine.speed.value * this.thrust;
+		const at = vec3.clone(player.position);
+		for (let i = 0; i < 3; i++) { /* each pass makes the flight time more exact */
+			const flight = vec3.distance(this.position, at) / shotSpeed;
+			vec3.scaleAndAdd(at, player.position, player.velocity, (flight + this.steeringLag) * lead);
+		}
+		return at;
+	}
+
+	private think(dt: number, lead: number): void {
 		this.trigger = false;
 		if (!this.target || this.target.dead) { this.chase(nearestAlive(this, this.players)); }
 
@@ -109,7 +125,7 @@ export class Hunter extends Ship {
 			return;
 		}
 
-		const angle = this.steerTowards(player.position);
+		const angle = this.steerTowards(this.aimPoint(player, lead));
 		if (angle > FIRE_CONE || distance < this.closest - GAIN) {
 			this.closest = distance;
 			this.stalled = 0;

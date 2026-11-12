@@ -5,9 +5,10 @@ import { Missile } from "../src/entity/missile.ts";
 import { DIFFICULTIES } from "../src/difficulty.ts";
 import type { PlayerShip } from "../src/entity/player-ship.ts";
 import { applyPowerup, Powerup, POWER_SHOTS } from "../src/entity/powerup.ts";
-import { BOOST_FACTOR, BOOST_RAMP, POWER_SHOT, ROCKET_CAPACITY } from "../src/entity/ship.ts";
+import { BOOST_FACTOR, BOOST_RAMP, POWER_SHOT, ROCKET_CAPACITY, STRAFE_SPEED } from "../src/entity/ship.ts";
 import { enemyWaves, LEVELS } from "../src/levels.ts";
 import type { Loop } from "../src/loop.ts";
+import type { Mechanics } from "../src/mechanics.ts";
 import { kindIndex } from "../src/net/kinds.ts";
 import {
 	arenaSizeFor, MIN_ARENA_SIZE as ARENA_SIZE, RECONNECT_GRACE, RESPAWN_DELAY,
@@ -127,7 +128,7 @@ describe("game rooms", () => {
 
 		for (const m of [host, guest]) {
 			const start = m.messages.find(message => message.type == "start");
-			expect(start).toMatchObject({ level: 0, difficulty: "normal", podsTotal: 12 });
+			expect(start).toMatchObject({ level: 0, difficulty: "normal", mechanics: "classic", podsTotal: 12 });
 			expect(Object.keys(start!.type == "start" ? start!.ships : {})).toEqual(["1", "2"]);
 		}
 
@@ -453,10 +454,10 @@ describe("what browsers report is checked:", () => {
 
 describe("deathmatch", () => {
 	/** A match of two, ready to go */
-	async function match(fragLimit = 10, timeLimit = 5): Promise<{ room: Room; host: TestMember; guest: TestMember }> {
+	async function match(fragLimit = 10, timeLimit = 5, mechanics: Mechanics = "classic"): Promise<{ room: Room; host: TestMember; guest: TestMember }> {
 		const host = member(1);
 		const guest = member(2);
-		const room = new Room("ABCD", host, 0, "normal");
+		const room = new Room("ABCD", host, 0, "normal", null, mechanics);
 		room.join(guest);
 		room.setup(host.id, { mode: "deathmatch", level: 0, difficulty: "normal", fragLimit, timeLimit });
 		room.start(host.id);
@@ -626,6 +627,47 @@ describe("deathmatch", () => {
 		}
 		expect(ship.engine.speed.value).toBeCloseTo(speed);
 		expect(room.refused).toMatchObject({ moves: 0, shots: 0 });
+	});
+
+	it("believes a ship strafing at full throttle, keeps it drifting sideways between reports, and takes its shots", async () => {
+		const { room, guest } = await match(10, 5, "modern");
+		place(room, guest.id, [0, 0, 0]);
+		const ship = shipOf(room, guest.id);
+		const speed = ship.engine.speed.limit;
+		/* as the browser flies it: no faster than top speed in all */
+		const share = ship.topSpeed / Math.hypot(speed, STRAFE_SPEED);
+		const [vx, vz] = [STRAFE_SPEED * share, -speed * share];
+		let [x, z] = [0, 0];
+		for (let n = 1; n <= 40; n++) {
+			x += vx * 0.05;
+			z += vz * 0.05;
+			room.report(guest.id, report({
+				ship: flying([x, 0, z], [0, 0, 0, 1], { speed, target: speed, strafe: STRAFE_SPEED }),
+				/* the shot keeps the forward speed only */
+				shots: (n % 4 == 0 ? [{ n, t: nowIn(room), p: [x, 0, z - 3], v: [0, 0, vz - 120] }] : []),
+			}));
+			run(room, 0.05);
+			expect(ship.position[0]).toBeCloseTo(x + vx * 0.05, 0);
+			expect(ship.position[2]).toBeCloseTo(z + vz * 0.05, 0);
+		}
+		expect(room.refused).toMatchObject({ moves: 0, shots: 0 });
+
+		/* no reports for a second: it flies on the same way */
+		const before = vec3.clone(ship.position);
+		run(room, 1);
+		expect(ship.position[0] - before[0]).toBeCloseTo(vx, 0);
+		expect(ship.position[2] - before[2]).toBeCloseTo(vz, 0);
+	});
+
+	it("takes no strafing from a browser with classic mechanics, the room's", async () => {
+		const { room, host, guest } = await match();
+		expect(host.messages.find(message => message.type == "start")).toMatchObject({ mechanics: "classic" });
+		place(room, guest.id, [0, 0, 0]);
+		const ship = shipOf(room, guest.id);
+		room.report(guest.id, report({ ship: flying([0, 0, 0], [0, 0, 0, 1], { speed: 0, target: 0, strafe: STRAFE_SPEED }) }));
+		run(room, 1);
+		expect(ship.engine.strafe.value).toBe(0);
+		expect(ship.position[0]).toBeCloseTo(0);
 	});
 
 	it("lets a shot destroy a powerup, for everyone, and nobody gets it", async () => {

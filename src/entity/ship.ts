@@ -23,6 +23,11 @@ export const TUMBLE_TIME = 1;
 /** Spin rate right after a bump (rad/s); it fades to nothing over TUMBLE_TIME, turning the ship about 45° */
 export const TUMBLE_SPIN = 1.5;
 
+/** Strafing: top sideways speed of a player's ship (m/s), well below its forward speed … */
+export const STRAFE_SPEED = 6;
+/** … and how quickly it gets there, or stops (m/s²) */
+export const STRAFE_ACCELERATION = 20;
+
 /** Most rockets a ship carries */
 export const ROCKET_CAPACITY = 3;
 /** The player's homing rockets: faster and more agile than pirate missiles; one destroys a pirate */
@@ -63,6 +68,8 @@ interface Axis {
 
 export interface Engine {
 	speed: Throttle;
+	/** Sideways (m/s), positive to the right; only a player's ship has any (limit above 0) */
+	strafe: Throttle;
 	yaw: Axis;
 	pitch: Axis;
 }
@@ -70,6 +77,7 @@ export interface Engine {
 export class Ship extends Entity {
 	readonly engine: Engine = {
 		speed: { value: 0, target: 0, changeRate: 15, limit: 15 },
+		strafe: { value: 0, target: 0, changeRate: STRAFE_ACCELERATION, limit: 0 },
 		yaw: { changeRate: 3.5, control: 0 },
 		pitch: { changeRate: 3.5, control: 0 },
 	};
@@ -112,9 +120,20 @@ export class Ship extends Entity {
 		return this;
 	}
 
-	/** The fastest it can fly right now (m/s), forward and reverse; the throttle itself only goes up to engine.speed.limit */
+	/**
+	 * The fastest it can fly right now (m/s), in any direction: strafing at full throttle takes some of the forward speed.
+	 * The throttle itself only goes up to engine.speed.limit.
+	 */
 	get topSpeed(): number {
 		return this.engine.speed.limit * this.thrust;
+	}
+
+	/**
+	 * How long the nose trails a point moving steadily across it, when steered by steerTowards() (s): the steering
+	 * is in proportion to the angle, so it settles at the angle the point moves through in this time
+	 */
+	get steeringLag(): number {
+		return 1 / (STEER_GAIN * this.engine.yaw.changeRate);
 	}
 
 	/**
@@ -152,7 +171,8 @@ export class Ship extends Entity {
 		this.effects.power = this.effects.boost = 0;
 		this.thrust = 1;
 		this.tumble.time = 0;
-		this.engine.speed.value = this.engine.speed.target = 0;
+		const { speed, strafe } = this.engine;
+		speed.value = speed.target = strafe.value = strafe.target = 0;
 	}
 
 	get tumbling(): boolean {
@@ -168,6 +188,7 @@ export class Ship extends Entity {
 		if (this.tumbling) { return false; }
 
 		this.engine.speed.value *= BUMP_SPEED_KEPT;
+		this.engine.strafe.value *= BUMP_SPEED_KEPT;
 		const direction = 2 * Math.PI * Math.random();
 		vec3.set(this.tumble.spin, TUMBLE_SPIN * Math.cos(direction), TUMBLE_SPIN * Math.sin(direction), 0);
 		this.tumble.time = TUMBLE_TIME;
@@ -227,14 +248,22 @@ export class Ship extends Entity {
 	}
 
 	private updateSpeed(dt: number): void {
-		const speed = this.engine.speed;
+		const { speed, strafe } = this.engine;
+		for (const throttle of [speed, strafe]) {
+			const { limit } = throttle;
+			const target = Math.min(limit, Math.max(-limit, throttle.target));
+			const maxChange = throttle.changeRate * dt;
+			throttle.value += Math.max(-maxChange, Math.min(maxChange, target - throttle.value));
+		}
+		this.updateVelocity();
+	}
 
-		const { limit } = speed;
-		const target = Math.min(limit, Math.max(-limit, speed.target));
-		const maxChange = speed.changeRate * dt;
-		speed.value += Math.max(-maxChange, Math.min(maxChange, target - speed.value));
-
-		vec3.set(this.velocity, 0, 0, -speed.value * this.thrust); /* -Z is the default model orientation */
+	/** Velocity from the speeds and the orientation: no faster than topSpeed, however the two speeds add up */
+	updateVelocity(): void {
+		const { speed, strafe } = this.engine;
+		vec3.set(this.velocity, strafe.value * this.thrust, 0, -speed.value * this.thrust); /* -Z is the default model orientation */
+		const length = vec3.length(this.velocity);
+		if (length > this.topSpeed) { vec3.scale(this.velocity, this.velocity, this.topSpeed / length); }
 		vec3.transformQuat(this.velocity, this.velocity, this.orientation);
 	}
 }

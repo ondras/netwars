@@ -1,4 +1,5 @@
 import type { DifficultyLevel } from "../src/difficulty.ts";
+import type { Mechanics } from "../src/mechanics.ts";
 import { CODE_ALPHABET, CODE_LENGTH } from "../src/net/protocol.ts";
 import type { MatchLogs } from "./match-log.ts";
 import { Room, type Member } from "./room.ts";
@@ -26,14 +27,14 @@ export class Rooms {
 	}
 
 	/** @returns null when the server is full */
-	create(host: Member, level: number, difficulty: DifficultyLevel): Room | null {
+	create(host: Member, level: number, difficulty: DifficultyLevel, mechanics: Mechanics = "classic"): Room | null {
 		if (this.rooms.size >= MAX_ROOMS) { return null; }
 		let code: string;
 		do {
 			code = Array.from({ length: CODE_LENGTH }, () => CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)]).join("");
 		} while (this.rooms.has(code));
 
-		const room = new Room(code, host, level, difficulty, this.logs);
+		const room = new Room(code, host, level, difficulty, this.logs, mechanics);
 		this.rooms.set(code, room);
 		return room;
 	}

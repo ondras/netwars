@@ -32,7 +32,7 @@ function setup(arena: StartMessage["arena"] = null) {
 	loop.players.push(ship);
 	loop.scene.push(ship);
 	const start: StartMessage = {
-		type: "start", run: 1, level: 0, difficulty: "normal", ships: { [ME]: MY_SHIP, 2: TEAMMATE },
+		type: "start", run: 1, level: 0, difficulty: "normal", mechanics: "classic", ships: { [ME]: MY_SHIP, 2: TEAMMATE },
 		spawn: [0, 0, 0], facing: [0, 0, 0, 1], rockets: 3, alive: true, podsTotal: 3, arena,
 	};
 	const session = new OnlineSession(loop, message => sent.push(message), start, ME, ship, () => clock.now);
